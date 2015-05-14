@@ -85,11 +85,6 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     }
     }    
   
-    
-    
-    //Mat I = (Mat_<double>(4,4) << 1, 0, 0,0, 0, 1, 0,0, 0, 0, 1,0,0,0,0,1);
-    //br.sendTransform(tf::StampedTransform(matToTF(I), ros::Time::now(),  "","base"));
-    
     cv::Mat source = new_image;
     
     marker_detector.detect(source, markers_list, camera_parameters, marker_size, false);
@@ -97,29 +92,9 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     for (unsigned int i = 0; i < markers_list.size(); i++) {
         markers_list[i].draw(source, cv::Scalar(0, 255, 0), 2);
         aruco::CvDrawingUtils::draw3dAxis(source, markers_list[i], camera_parameters);
-        //cv::Mat T = MathUtils::getTMarker(markers_list[i]);
-        
-       // tf::Transform tf = matToTF(T);
-       // std::cout << T<<std::endl;
-//      std::cout << T <<std::endl;
-//      tf::Transform tf = matToTF(T);
-//      //std::cout << tf << std::endl;
-//      std::stringstream ss;
-//      ss << "marker_"<<Markers[i].id;
-//      std::cout << "PUB TF: "<<ss.str().c_str()<<std::endl;
-//      br.sendTransform(tf::StampedTransform(tf, ros::Time::now(), "world", ss.str().c_str()));
-       // std::stringstream ss;
-      //  ss << "lar_marker_"<<markers_list[i].id;
-       // std::cout << ss.str()<<std::endl;
-        
-//        if(markers_list[i].id==111){
-          //  br.sendTransform(tf::StampedTransform(tf, ros::Time::now(),  "camera_depth_frame",ss.str().c_str()));
-  //      }
     }
-    //ros::spinOnce();
     cv::imshow("view", source);
     cv::waitKey(1000/30);
-    
 }
 
 
@@ -149,19 +124,12 @@ int main(int argc, char **argv)
     while(nh.ok()){
         
         for (unsigned int i = 0; i < markers_list.size(); i++) {
-       // markers_list[i].draw(source, cv::Scalar(0, 255, 0), 2);
-       // aruco::CvDrawingUtils::draw3dAxis(source, markers_list[i], camera_parameters);
+ 
         cv::Mat T = MathUtils::getTMarker(markers_list[i]);
         
         tf::Transform tf = matToTF(T);
         std::cout << T<<std::endl;
-//      std::cout << T <<std::endl;
-//      tf::Transform tf = matToTF(T);
-//      //std::cout << tf << std::endl;
-//      std::stringstream ss;
-//      ss << "marker_"<<Markers[i].id;
-//      std::cout << "PUB TF: "<<ss.str().c_str()<<std::endl;
-//      br.sendTransform(tf::StampedTransform(tf, ros::Time::now(), "world", ss.str().c_str()));
+
         std::stringstream ss;
         ss << "lar_marker_"<<markers_list[i].id;
         std::cout << ss.str()<<std::endl;
