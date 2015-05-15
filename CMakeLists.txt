@@ -10,11 +10,18 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   tf
   message_generation
+  pcl_ros
+ 
 )
 
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/${PROJECT_NAME}/cmake/Modules/")
 set(CMAKE_INCLUDE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/${PROJECT_NAME}/include/")
+
+#PCL
+find_package(PCL 1.8 REQUIRED  )
+add_definitions(${PCL_DEFINITIONS})
+
 
 #OpenCV
 find_package(OpenCV REQUIRED)
@@ -32,12 +39,6 @@ set(ARUCO_LIBS /usr/local/lib/libaruco.so)
 #set(VISION_SYSTEM_LIBS /usr/local/lib/libVisionSystemLegacy.so)
 
 
-#PCL
-find_package(PCL 1.7 REQUIRED  )
-include_directories(${PCL_INCLUDE_DIRS})
-link_directories(${PCL_LIBRARY_DIRS})
-add_definitions(${PCL_DEFINITIONS})
-
 
 #SOPHUS
 #set(SOPHUS_INCLUDE_DIRS /usr/local/include/sophus)
@@ -54,16 +55,22 @@ add_definitions(${PCL_DEFINITIONS})
 #    MarkerImageService.srv
 # )
 
+
+
+
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES lar_visionsystem
 #  CATKIN_DEPENDS roscpp rospy std_msgs
 #  DEPENDS system_lib
+  #  DEPENDS
+    
 )
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${CMAKE_INCLUDE_PATH}
+  ${PCL_INCLUDE_DIRS}
 )
 
 MESSAGE(CIAO)
@@ -104,3 +111,4 @@ target_link_libraries(marker_detector ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO
 # PLAYGROUND
 add_executable(playground src/playground.cpp)
 target_link_libraries(playground ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARY_DIRS} ${ARUCO_LIBS} lar_visionsystem_commons)
+

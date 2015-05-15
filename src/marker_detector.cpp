@@ -1,4 +1,6 @@
 #include "ros/ros.h"
+#include <dynamic_reconfigure/server.h>
+
 #include "iostream"
 #include "aruco/aruco.h"
 
@@ -9,8 +11,9 @@
 #include <tf/transform_broadcaster.h>
 
 #include "MathUtils.h"
-
+#include <dynamic_reconfigure/server.h>
 static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy/data/kinect_parameters.txt";
+
 
 /**
     Parameters
@@ -18,6 +21,7 @@ static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy
 std::string camera_topic_name = "/camera/rgb/image_mono";
 //TODO: Parametrizzare da topic o da arg questo file
 std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/kinect.yml";
+ros::NodeHandle* nh = NULL;
 
 /**
     Aruco Detectors
@@ -26,43 +30,21 @@ aruco::CameraParameters camera_parameters;
 aruco::MarkerDetector marker_detector;
 float marker_size = 0.1;
 vector<aruco::Marker> markers_list;
+vector<aruco::Marker> filtered_markers_list;
+std::map<int, tf::Transform> filtered_markers_tf;
 
-/**
-    MAT4x4 to TF
-*/
-tf::Transform matToTF(cv::Mat& mat){
-  tf::Vector3 origin;
-  tf::Matrix3x3 tf3d;
-  origin.setValue(
-    static_cast<float>(mat.at<float>(0,3))/1000.0f,
-    static_cast<float>(mat.at<float>(1,3))/1000.0f,
-    static_cast<float>(mat.at<float>(2,3))/1000.0f
-  );
-
-  tf3d.setValue(
-    static_cast<float>(mat.at<float>(0,0)), static_cast<float>(mat.at<float>(0,1)), static_cast<float>(mat.at<float>(0,2)),
-    static_cast<float>(mat.at<float>(1,0)), static_cast<float>(mat.at<float>(1,1)), static_cast<float>(mat.at<float>(1,2)),
-    static_cast<float>(mat.at<float>(2,0)), static_cast<float>(mat.at<float>(2,1)), static_cast<float>(mat.at<float>(2,2))
-  );
-
-  for(int i = 0; i < 3; i++){
-    for(int j = 0; j < 3; j++){
-      tf3d[i][j] = mat.at<float>(i,j);
-
-    }
-    std::cout<<std::endl;
-
-  }
-
-
-  tf::Quaternion tfqt;
-  tf3d.getRotation(tfqt);
-  tfqt = tfqt.normalized();
-
-  tf::Transform transform;
-  transform.setOrigin(origin);
-  transform.setRotation(tfqt);
-  return transform;
+void lowPassFilter(tf::Transform& newTF, tf::Transform& oldTF,tf::Transform& targetTF, float alpha){
+    for(int i = 0; i < 3; i++)
+        targetTF.getOrigin()[i] = (1.0f-alpha)*oldTF.getOrigin()[i] + alpha*newTF.getOrigin()[i];
+    
+    tf::Quaternion newQ = newTF.getRotation();
+    tf::Quaternion oldQ = oldTF.getRotation();
+    tf::Quaternion targetQ = targetTF.getRotation();
+    
+    for(int i = 0; i < 4; i++)
+        targetQ[i] = (1.0f-alpha)*oldQ[i] + alpha*newQ[i];
+    
+    targetTF.setRotation(targetQ);
 }
 
 /**
@@ -70,31 +52,37 @@ Image Callback
 */
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
-	    
-    cv::Mat image = cv_bridge::toCvShare(msg, "bgr8")->image;
-    cv::Mat new_image = image.clone();
-    int beta = 0;
-    double alpha = 1.0;
-	for( int y = 0; y < image.rows; y++ )
-    { for( int x = 0; x < image.cols; x++ )
-         { for( int c = 0; c < 3; c++ )
-              {
-      new_image.at<Vec3b>(y,x)[c] =
-         saturate_cast<uchar>( alpha*( image.at<Vec3b>(y,x)[c] ) + beta );
-             }
-    }
-    }    
-  
-    cv::Mat source = new_image;
+    cv::Mat source = cv_bridge::toCvShare(msg, "bgr8")->image;
     
     marker_detector.detect(source, markers_list, camera_parameters, marker_size, false);
     
+    float alpha = 0.11f;
+  
     for (unsigned int i = 0; i < markers_list.size(); i++) {
-        markers_list[i].draw(source, cv::Scalar(0, 255, 0), 2);
-        aruco::CvDrawingUtils::draw3dAxis(source, markers_list[i], camera_parameters);
+        cv::Mat T = lar_visionsystem::MathUtils::getTMarker(markers_list[i]);
+        tf::Transform tf = lar_visionsystem::MathUtils::matToTF(T);
+        
+        std::map<int, tf::Transform>::iterator iter = filtered_markers_tf.find(markers_list[i].id);
+        if(iter != filtered_markers_tf.end()){
+            tf::Transform ftf = iter->second;
+
+            lowPassFilter(tf,ftf,ftf,alpha);
+            
+            filtered_markers_tf[markers_list[i].id] = ftf;
+        }else{
+            filtered_markers_tf[markers_list[i].id] = tf;
+        }
+        
     }
+    
+    for (unsigned int i = 0; i < markers_list.size(); i++) {
+     markers_list[i].draw(source, cv::Scalar(0, 255, 0), 2);
+     aruco::CvDrawingUtils::draw3dAxis(source, markers_list[i], camera_parameters);
+    }
+    
     cv::imshow("view", source);
     cv::waitKey(1000/30);
+    
 }
 
 
@@ -104,41 +92,40 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
  *------------------------------------------------------------------*/
 
 int main(int argc, char **argv)
-{
+{   
     /** Camera Parameters */
     camera_parameters.readFromXMLFile(camera_info_file_name);
    
     
-    ros::init(argc, argv, "camera_viewer");
+    ros::init(argc, argv, "marker_detector");
+    nh = new ros::NodeHandle();
     
-    ros::NodeHandle nh;
-    cv::namedWindow("view");
-    cv::startWindowThread();
-    
-    image_transport::ImageTransport it(nh);
+   
+    image_transport::ImageTransport it(*nh);
     image_transport::Subscriber sub = it.subscribe(camera_topic_name.c_str(), 1, imageCallback);
+    //nh->setParam("/marker_detector/lowPassAlpha", 0.1);
     
     //ros::spin();
     tf::TransformBroadcaster br;
     
-    while(nh.ok()){
+    
+    cv::namedWindow("view");
+    cv::startWindowThread();
+    
+    while(nh->ok()){
         
-        for (unsigned int i = 0; i < markers_list.size(); i++) {
- 
-        cv::Mat T = MathUtils::getTMarker(markers_list[i]);
-        
-        tf::Transform tf = matToTF(T);
-        std::cout << T<<std::endl;
-
+    std::map<int, tf::Transform>::iterator iter ;
+    for (iter = filtered_markers_tf.begin(); iter != filtered_markers_tf.end(); iter++) {
+           
         std::stringstream ss;
-        ss << "lar_marker_"<<markers_list[i].id;
+        ss << "lar_marker_"<<iter->first;
         std::cout << ss.str()<<std::endl;
-
-        br.sendTransform(tf::StampedTransform(tf, ros::Time::now(),  "camera_depth_frame",ss.str().c_str()));
-
-    }
         
-        ros::spinOnce();
+        br.sendTransform(tf::StampedTransform(iter->second, ros::Time::now(),  "camera_depth_frame",ss.str().c_str()));
+       
+    }
+  
+    ros::spinOnce();
         
     }
     cv::destroyWindow("view");

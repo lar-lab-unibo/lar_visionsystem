@@ -9,6 +9,8 @@
 
 using namespace cv;
 
+namespace lar_visionsystem{
+    
 MathUtils::MathUtils() {
 }
 
@@ -249,4 +251,40 @@ Mat MathUtils::dumpMats(vector<Mat> mats) {
     }
     cout << mdump.size() << endl;
     return mdump;
+}
+
+tf::Transform MathUtils::matToTF(cv::Mat& mat){
+  tf::Vector3 origin;
+  tf::Matrix3x3 tf3d;
+  origin.setValue(
+    static_cast<float>(mat.at<float>(0,3))/1000.0f,
+    static_cast<float>(mat.at<float>(1,3))/1000.0f,
+    static_cast<float>(mat.at<float>(2,3))/1000.0f
+  );
+
+  tf3d.setValue(
+    static_cast<float>(mat.at<float>(0,0)), static_cast<float>(mat.at<float>(0,1)), static_cast<float>(mat.at<float>(0,2)),
+    static_cast<float>(mat.at<float>(1,0)), static_cast<float>(mat.at<float>(1,1)), static_cast<float>(mat.at<float>(1,2)),
+    static_cast<float>(mat.at<float>(2,0)), static_cast<float>(mat.at<float>(2,1)), static_cast<float>(mat.at<float>(2,2))
+  );
+
+  for(int i = 0; i < 3; i++){
+    for(int j = 0; j < 3; j++){
+      tf3d[i][j] = mat.at<float>(i,j);
+
+    }
+    std::cout<<std::endl;
+
+  }
+
+
+  tf::Quaternion tfqt;
+  tf3d.getRotation(tfqt);
+  tfqt = tfqt.normalized();
+
+  tf::Transform transform;
+  transform.setOrigin(origin);
+  transform.setRotation(tfqt);
+  return transform;
+}
 }
