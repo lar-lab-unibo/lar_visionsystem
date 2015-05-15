@@ -33,10 +33,10 @@ set(ARUCO_LIBS /usr/local/lib/libaruco.so)
 
 
 #PCL
-#find_package(PCL 1.8 REQUIRED )
-#include_directories(${PCL_INCLUDE_DIRS})
-#link_directories(${PCL_LIBRARY_DIRS})
-#add_definitions(${PCL_DEFINITIONS})
+find_package(PCL 1.7 REQUIRED  )
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
 
 
 #SOPHUS
@@ -89,8 +89,18 @@ add_library(lar_visionsystem_commons
     )
 target_link_libraries (lar_visionsystem_commons ${OpenCV_LIBS} ${ARUCO_LIBS})
 
+
+#MODULES
+
+
+# CAMERA VIEWER
 add_executable(camera_viewer src/camera_viewer.cpp)
 target_link_libraries(camera_viewer ${catkin_LIBRARIES} ${OpenCV_LIBS})
 
+# 2D MARKER DETECTOR
 add_executable(marker_detector src/marker_detector.cpp)
 target_link_libraries(marker_detector ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} lar_visionsystem_commons)
+
+# PLAYGROUND
+add_executable(playground src/playground.cpp)
+target_link_libraries(playground ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARY_DIRS} ${ARUCO_LIBS} lar_visionsystem_commons)
