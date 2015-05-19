@@ -1,0 +1,6 @@
+base_id: '/lar_marker_100'
+obstacle_first_id: 200
+obstacles: ['/lar_marker_200','/lar_marker_201']
+obstacles_sizes: [0.05,0.05]
+robots: ['/lar_marker_202']
+robots_sizes: [0.05]

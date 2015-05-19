@@ -108,6 +108,11 @@ target_link_libraries(camera_viewer ${catkin_LIBRARIES} ${OpenCV_LIBS})
 add_executable(marker_detector src/marker_detector.cpp)
 target_link_libraries(marker_detector ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} lar_visionsystem_commons)
 
+# 2D TRACK GENERATOR
+add_executable(track_2d src/track_2d.cpp)
+target_link_libraries(track_2d ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} lar_visionsystem_commons)
+
+
 # PLAYGROUND
 add_executable(playground src/playground.cpp)
 target_link_libraries(playground ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARY_DIRS} ${ARUCO_LIBS} lar_visionsystem_commons)
