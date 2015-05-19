@@ -18,9 +18,13 @@ static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy
 /**
     Parameters
 */
-std::string camera_topic_name = "/camera/rgb/image_mono";
-//TODO: Parametrizzare da topic o da arg questo file
-std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/kinect.yml";
+
+//std::string camera_topic_name = "/usb_cam/image_raw";///camera/rgb/image_mono";
+//std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/lifeCamera640x480.yml";
+std::string  camera_topic_name = "/camera/rgb/image_mono";
+std::string  camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/kinect.yml";
+   
+
 ros::NodeHandle* nh = NULL;
 
 /**
@@ -97,6 +101,7 @@ int main(int argc, char **argv)
     camera_parameters.readFromXMLFile(camera_info_file_name);
    
     
+    
     ros::init(argc, argv, "marker_detector");
     nh = new ros::NodeHandle();
     
@@ -121,7 +126,7 @@ int main(int argc, char **argv)
         ss << "lar_marker_"<<iter->first;
         std::cout << ss.str()<<std::endl;
         
-        br.sendTransform(tf::StampedTransform(iter->second, ros::Time::now(),  "camera_depth_frame",ss.str().c_str()));
+        br.sendTransform(tf::StampedTransform(iter->second, ros::Time::now(),  "usb_cam",ss.str().c_str()));
        
     }
   
