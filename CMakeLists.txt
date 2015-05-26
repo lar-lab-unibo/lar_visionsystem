@@ -69,7 +69,9 @@ catkin_package(
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
+ 
   ${CMAKE_INCLUDE_PATH}
+   ${CMAKE_INCLUDE_PATH}/utils
   ${PCL_INCLUDE_DIRS}
 )
 
@@ -93,8 +95,9 @@ MESSAGE(${CMAKE_INCLUDE_PATH})
 #)
 add_library(lar_visionsystem_commons
         src/utils/MathUtils.cpp
+        src/utils/SimpleBluetoothNode.cpp
     )
-target_link_libraries (lar_visionsystem_commons ${OpenCV_LIBS} ${ARUCO_LIBS})
+target_link_libraries (lar_visionsystem_commons ${OpenCV_LIBS} ${ARUCO_LIBS} bluetooth)
 
 
 #MODULES

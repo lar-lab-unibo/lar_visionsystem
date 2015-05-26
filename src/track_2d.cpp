@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <opencv2/opencv.hpp>
+#include <SimpleBluetoothNode.h>
 
 namespace lar_visionsystem{
     
@@ -163,13 +164,35 @@ void drawTrack(
     }
 }
 
+/**
+* Multiple Bluetooth Connections
+*/
+void connectBluetoothNodes(std::vector<std::string>& bluetooth_nodes, std::vector<SimpleBluetoothNode>& nodes){
+    for(int i = 0; i < bluetooth_nodes.size(); i++){
+        SimpleBluetoothNode node(bluetooth_nodes[i]);
+        std::cout << "Node: "<<bluetooth_nodes[i]<<" -> "<<node.status<<std::endl;
+        nodes.push_back(node);
+    }
+}
+
+/**
+* Broadcast Message Send
+*/
+void sendMessageToBluetoothNodes(std::vector<SimpleBluetoothNode>& bluetooth_nodes,std::string message){
+     for(int i = 0; i < bluetooth_nodes.size(); i++){
+        bluetooth_nodes[i].writeMessage(message);
+     }
+}
 
 /**
 * NODE
 */
 int main(int argc, char** argv){
+ 
+    
   ros::init(argc, argv, "track_2d");
 
+    
   ros::NodeHandle node("~");
   tf::TransformListener listener;
     
@@ -180,7 +203,13 @@ int main(int argc, char** argv){
   node.getParam("base_id",track_base_frame);
   
     
-  
+  /** Bluetooth nodes **/
+  std::vector<std::string> bluetooth_nodes_addresses;
+  std::vector<SimpleBluetoothNode> bluetooth_nodes;
+  node.getParam("bluetooth_nodes",bluetooth_nodes_addresses);
+  connectBluetoothNodes(bluetooth_nodes_addresses,bluetooth_nodes);
+    
+    
   std::vector<std::string> obstacles_frame_ids;
   
   std::vector<double> obstacles_sizes;
@@ -235,7 +264,10 @@ int main(int argc, char** argv){
       drawTrack(track,track_img);
       cv::imshow("track",track_img);
       cv::waitKey(100);
-      
+    
+      std::stringstream ss;
+      ss << "POSES!3:P_A;0;0;20;P_B;0;0;20;P_C;0;0;0#";
+      sendMessageToBluetoothNodes(bluetooth_nodes,ss.str());
       
     rate.sleep();
   }
