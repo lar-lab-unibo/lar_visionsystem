@@ -207,7 +207,7 @@ int main(int argc, char** argv){
   std::vector<std::string> bluetooth_nodes_addresses;
   std::vector<SimpleBluetoothNode> bluetooth_nodes;
   node.getParam("bluetooth_nodes",bluetooth_nodes_addresses);
-  connectBluetoothNodes(bluetooth_nodes_addresses,bluetooth_nodes);
+  //connectBluetoothNodes(bluetooth_nodes_addresses,bluetooth_nodes);
     
     
   std::vector<std::string> obstacles_frame_ids;
@@ -242,7 +242,7 @@ int main(int argc, char** argv){
   std::vector<double> robots_heights(robots_frame_ids.size());
     
     
-  Track2D track(1,1,800);
+  Track2D track(2,1,500);
   track.obstacles_poses = obstacles_poses;
   track.robots_poses = robots_poses;
   track.obstacles_sizes = obstacles_sizes;

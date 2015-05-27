@@ -64,6 +64,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
   
     for (unsigned int i = 0; i < markers_list.size(); i++) {
         cv::Mat T = lar_visionsystem::MathUtils::getTMarker(markers_list[i]);
+        std::cout <<"\n"<<markers_list[i].id<<":  "<<  T.at<float>(0,2)<<","<< T.at<float>(1,2)<<","<< T.at<float>(2,2)<<"\n";
         tf::Transform tf = lar_visionsystem::MathUtils::matToTF(T);
         
         std::map<int, tf::Transform>::iterator iter = filtered_markers_tf.find(markers_list[i].id);
@@ -124,7 +125,7 @@ int main(int argc, char **argv)
            
         std::stringstream ss;
         ss << "lar_marker_"<<iter->first;
-        std::cout << ss.str()<<std::endl;
+        //std::cout << ss.str()<<std::endl;
         
         br.sendTransform(tf::StampedTransform(iter->second, ros::Time::now(),  "usb_cam",ss.str().c_str()));
        
