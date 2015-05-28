@@ -12,17 +12,29 @@ namespace lar_visionsystem{
         double x;
         double y;
         double theta;
+        std::string name;
         
         Pose2D(){
             this->x = 0;
             this->y = 0;
             this->theta = 0;
+            this->name = "";
         }
         
-        Pose2D(double x, double y, double theta){
+        Pose2D(double x, double y, double theta,std::string name){
             this->x = x;
             this->y = y;
             this->theta = theta;
+            this->name = name;
+        }
+        
+        std::string toString(){
+            std::stringstream ss;
+            ss << this->name << ";";
+            ss << this->x << ";";
+            ss << this->y << ";";
+            ss << this->theta << ";";
+            return ss.str();
         }
     };
     
@@ -59,7 +71,7 @@ using namespace lar_visionsystem;
 /**
 * Builds Pose2D from a 3D Transform. Targets have to be to same z level, use "transform_height" otherwise
 */
-void transformToPose2D(tf::Transform& transform, lar_visionsystem::Pose2D& pose, double transform_height){
+void transformToPose2D(tf::Transform& transform, lar_visionsystem::Pose2D& pose, double transform_height,std::string name = ""){
     tf::Matrix3x3 m(transform.getRotation());
     double rx,ry,rz;
     m.getEulerZYX(rz,ry,rx);
@@ -67,6 +79,7 @@ void transformToPose2D(tf::Transform& transform, lar_visionsystem::Pose2D& pose,
     pose.x = transform.getOrigin()[0];
     pose.y = transform.getOrigin()[1];
     pose.theta = rz;
+    pose.name = name;
 }
 
 
@@ -88,7 +101,7 @@ void getPose2D(tf::TransformListener& listener,std::string& base_frame_id,std::s
       return;
     }
     
-    transformToPose2D(transform,pose,0);
+    transformToPose2D(transform,pose,0,frame_id);
 }
 
 /**
@@ -109,7 +122,7 @@ void getPoses2D(tf::TransformListener& listener,std::string& base_frame_id,std::
           return;
         }
 
-        transformToPose2D(transform,poses[i],0);
+        transformToPose2D(transform,poses[i],0,frame_ids[i]);
     }
     
     
@@ -207,7 +220,10 @@ int main(int argc, char** argv){
   std::vector<std::string> bluetooth_nodes_addresses;
   std::vector<SimpleBluetoothNode> bluetooth_nodes;
   node.getParam("bluetooth_nodes",bluetooth_nodes_addresses);
-  //connectBluetoothNodes(bluetooth_nodes_addresses,bluetooth_nodes);
+  connectBluetoothNodes(bluetooth_nodes_addresses,bluetooth_nodes);
+    //
+    
+    
     
     
   std::vector<std::string> obstacles_frame_ids;
@@ -247,27 +263,41 @@ int main(int argc, char** argv){
   track.robots_poses = robots_poses;
   track.obstacles_sizes = obstacles_sizes;
   track.robots_sizes = robots_sizes;
-  ros::Rate rate(10.0);
+  ros::Rate rate(4.0);
     
   while (node.ok()){
    
     getPoses2D(listener,track_base_frame,obstacles_frame_ids,track.obstacles_poses,obstacles_heights);
     getPoses2D(listener,track_base_frame,robots_frame_ids,track.robots_poses,robots_heights);
    
+      
+      std::stringstream ss;
+      ss << "POSES!"<<track.obstacles_poses.size()+track.robots_poses.size()<<":";
+      
+      for(int k = 0; k < track.obstacles_poses.size(); k++){
+        ss << track.obstacles_poses[k].toString();
+      }
+      for(int k = 0; k < track.robots_poses.size(); k++){
+        ss << track.robots_poses[k].toString();
+      }
+      
+      ss<<"#";
+      std::cout << "Message:\n"<<ss.str()<<std::endl;
+      sendMessageToBluetoothNodes(bluetooth_nodes,ss.str());
+      
       // Pose2D pose;
     //getPose2D(listener,track_base_frame,target_frame,pose,0);
     
-    std::cout << "x: "<<track.robots_poses[0].x<< " y: "<<track.robots_poses[0].y<<" theta: "<<track.robots_poses[0].theta*180/M_PI<<std::endl;
+ //   std::cout << "x: "<<track.robots_poses[0].x<< " y: "<<track.robots_poses[0].y<<" theta: "<<track.robots_poses[0].theta*180/M_PI<<std::endl;
       
       //DRAW TRACK
       cv::Mat track_img;
       drawTrack(track,track_img);
       cv::imshow("track",track_img);
-      cv::waitKey(100);
+      cv::waitKey(10);
     
-      std::stringstream ss;
-      ss << "POSES!3:P_A;0;0;20;P_B;0;0;20;P_C;0;0;0#";
-      sendMessageToBluetoothNodes(bluetooth_nodes,ss.str());
+      
+      
       
     rate.sleep();
   }

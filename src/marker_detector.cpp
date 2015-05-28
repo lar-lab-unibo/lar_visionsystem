@@ -57,7 +57,7 @@ Image Callback
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
     cv::Mat source = cv_bridge::toCvShare(msg, "bgr8")->image;
-    
+    cv::blur( source, source, cv::Size(3,3));
     marker_detector.detect(source, markers_list, camera_parameters, marker_size, false);
     
     float alpha = 0.11f;
@@ -127,7 +127,7 @@ int main(int argc, char **argv)
         ss << "lar_marker_"<<iter->first;
         //std::cout << ss.str()<<std::endl;
         
-        br.sendTransform(tf::StampedTransform(iter->second, ros::Time::now(),  "usb_cam",ss.str().c_str()));
+        br.sendTransform(tf::StampedTransform(iter->second, ros::Time::now(),  "camera_rgb_frame",ss.str().c_str()));
        
     }
   
