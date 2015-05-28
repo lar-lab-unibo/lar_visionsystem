@@ -4,4 +4,10 @@ obstacles: ['/lar_marker_200','/lar_marker_201']
 obstacles_sizes: [0.05,0.05]
 robots: ['/lar_marker_202']
 robots_sizes: [0.05]
-bluetooth_nodes: ['00:16:53:0D:D7:03','00:16:53:0A:DC:F2']
+bluetooth_nodes: ['00:16:53:0D:D7:03']
+
+
+# '00:16:53:0D:D7:03' Noi 
+# '00:16:53:0A:DC:F2' Noi Vecchio
+# '00:16:53:0E:CC:04' Nicolandro Gruppo 4
+# '00:16:53:0D:5B:5A' Furiello Gruppo 9

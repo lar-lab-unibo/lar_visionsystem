@@ -60,7 +60,8 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     cv::blur( source, source, cv::Size(3,3));
     marker_detector.detect(source, markers_list, camera_parameters, marker_size, false);
     
-    float alpha = 0.11f;
+    float alpha = 0.99f;
+    //float alpha = 0.11f;
   
     for (unsigned int i = 0; i < markers_list.size(); i++) {
         cv::Mat T = lar_visionsystem::MathUtils::getTMarker(markers_list[i]);

@@ -182,6 +182,7 @@ void drawTrack(
 */
 void connectBluetoothNodes(std::vector<std::string>& bluetooth_nodes, std::vector<SimpleBluetoothNode>& nodes){
     for(int i = 0; i < bluetooth_nodes.size(); i++){
+        std::cout << "Connectiont to: "<<bluetooth_nodes[i]<<std::endl;
         SimpleBluetoothNode node(bluetooth_nodes[i]);
         std::cout << "Node: "<<bluetooth_nodes[i]<<" -> "<<node.status<<std::endl;
         nodes.push_back(node);
@@ -263,7 +264,9 @@ int main(int argc, char** argv){
   track.robots_poses = robots_poses;
   track.obstacles_sizes = obstacles_sizes;
   track.robots_sizes = robots_sizes;
-  ros::Rate rate(4.0);
+  ros::Rate rate(100.0);
+    
+  int fake_counter = 0;
     
   while (node.ok()){
    
@@ -272,7 +275,7 @@ int main(int argc, char** argv){
    
       
       std::stringstream ss;
-      ss << "POSES!"<<track.obstacles_poses.size()+track.robots_poses.size()<<":";
+      ss << "POSES!"<<track.obstacles_poses.size()+track.robots_poses.size()+1<<":";
       
       for(int k = 0; k < track.obstacles_poses.size(); k++){
         ss << track.obstacles_poses[k].toString();
@@ -281,10 +284,17 @@ int main(int argc, char** argv){
         ss << track.robots_poses[k].toString();
       }
       
+      ss <<"time;"<<fake_counter<<";0;0";
       ss<<"#";
-      std::cout << "Message:\n"<<ss.str()<<std::endl;
-      sendMessageToBluetoothNodes(bluetooth_nodes,ss.str());
+      //std::cout << "Message:\n"<<ss.str()<<std::endl;
       
+      //ss.str("");
+      //ss << fake_counter++<<";dasdasuhdaiushdiuashdiuashdiuashdiuashduiahsiduhasiudhasiu#";
+      if(fake_counter%20==0){
+        std::cout << ss.str()<<std::endl;
+        sendMessageToBluetoothNodes(bluetooth_nodes,ss.str());
+      }
+    
       // Pose2D pose;
     //getPose2D(listener,track_base_frame,target_frame,pose,0);
     
@@ -297,7 +307,7 @@ int main(int argc, char** argv){
       cv::waitKey(10);
     
       
-      
+      fake_counter++;
       
     rate.sleep();
   }
