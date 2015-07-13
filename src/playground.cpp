@@ -10,6 +10,8 @@
  #include "pcl_ros/impl/transforms.hpp"
 #include <opencv2/opencv.hpp>
 
+#include <tf/transform_broadcaster.h>
+
 ros::Publisher pub;
 //pcl::visualization::PCLVisualizer* viewer;
 
@@ -48,34 +50,35 @@ tf::Transform matToTF(cv::Mat& mat){
   return transform;
 }
 
-void 
+void
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
   // Create a container for the data.
  /* sensor_msgs::PointCloud2 output;
-     
+
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new  pcl::PointCloud<pcl::PointXYZ>);
   pcl::PCLPointCloud2 pcl_pc;
   pcl_conversions::toPCL(*input, pcl_pc);
   pcl::fromPCLPointCloud2(pcl_pc, *cloud);
-  
 
-      
+
+
       sensor_msgs::PointCloud out;
-        
-    float dummy_query_data[10] = { 
+
+    float dummy_query_data[10] = {
         0,0,-1,0,
         0,1,0,0,
         1,0,0,0,
         0,0,0,1};
-    
+
     cv::Mat dummy_query = cv::Mat(2, 4, CV_32F, dummy_query_data);
      tf::Transform tf = matToTF(dummy_query);
         tf::TransformListener listener;
-    
+
     pcl_ros::transformPointCloud ("lar_marker_111", *input, out,listener);
       //tf::TransformListener::("lar_marker_111",*input,out);
     */
+
      sensor_msgs::PointCloud2 out = *input;
       out.header.frame_id = "camera_link";
      pub.publish(out);
@@ -90,16 +93,47 @@ main (int argc, char** argv)
   // Initialize ROS
   ros::init (argc, argv, "my_pcl_tutorial");
   ros::NodeHandle nh;
-    
+
   //viewer = new pcl::visualization::PCLVisualizer("viewer");
-    
+
   // Create a ROS subscriber for the input point cloud
-  ros::Subscriber sub = nh.subscribe ("/camera/depth_registered/points", 1, cloud_cb); 
-  pub = nh.advertise<sensor_msgs::PointCloud2> ("mycloud", 1);
- 
+  //ros::Subscriber sub = nh.subscribe ("/camera/depth_registered/points", 1, cloud_cb);
+  //pub = nh.advertise<sensor_msgs::PointCloud2> ("mycloud", 1);
+
+  tf::TransformListener listener;
+
+  tf::StampedTransform t_cam_marker;
+  tf::StampedTransform t_0_marker;
+  tf::StampedTransform t_0_6;
+
+  tf::Transform t_6_0;
+  tf::Transform t_marker_cam;
+
+  tf::Transform t_6_cam;
+
+  tf::TransformBroadcaster br;
+
   // Spin
     while(nh.ok()  ){
-       
+      try{
+        listener.lookupTransform("camera_rgb_frame", "lar_marker_600", ros::Time(0), t_cam_marker);
+        listener.lookupTransform("base", "comau_base_marker", ros::Time::now(), t_0_marker);
+        listener.lookupTransform("base", "comau_t0U",ros::Time::now(), t_0_6);
+
+        t_6_0 = t_0_6.inverse();
+        t_marker_cam = t_cam_marker.inverse();
+
+        t_6_cam = t_6_0 * t_0_marker;
+        t_6_cam = t_6_cam * t_marker_cam;
+
+        br.sendTransform(tf::StampedTransform(t_6_cam, ros::Time::now(), "comau_t0U", "comau_t0CAM"));
+
+        }
+        catch (tf::TransformException ex){
+          ROS_ERROR("%s",ex.what());
+          ros::Duration(1.0).sleep();
+
+        }
         ros::spinOnce();
     }
 }
