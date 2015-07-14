@@ -6,12 +6,13 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   sensor_msgs
+  geometry_msgs
   cv_bridge
   image_transport
   tf
+  tf_conversions
   message_generation
   pcl_ros
- 
 )
 
 
@@ -20,6 +21,8 @@ set(CMAKE_INCLUDE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/${PROJECT_NAME}
 
 #PCL
 find_package(PCL 1.8 REQUIRED  )
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
 
@@ -64,12 +67,12 @@ catkin_package(
 #  CATKIN_DEPENDS roscpp rospy std_msgs
 #  DEPENDS system_lib
   #  DEPENDS
-    
+
 )
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
- 
+
   ${CMAKE_INCLUDE_PATH}
    ${CMAKE_INCLUDE_PATH}/utils
   ${PCL_INCLUDE_DIRS}
@@ -118,5 +121,4 @@ target_link_libraries(track_2d ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} 
 
 # PLAYGROUND
 add_executable(playground src/playground.cpp)
-target_link_libraries(playground ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARY_DIRS} ${ARUCO_LIBS} lar_visionsystem_commons)
-
+target_link_libraries(playground ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_visionsystem_commons)

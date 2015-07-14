@@ -12,15 +12,15 @@ static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
-    try
-    {
-        cv::imshow("view", cv_bridge::toCvShare(msg, "bgr8")->image);
-        cv::waitKey(30);
-    }
-    catch (cv_bridge::Exception& e)
-    {
-        ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
-    }
+        try
+        {
+                cv::imshow("view", cv_bridge::toCvShare(msg, "bgr8")->image);
+                cv::waitKey(30);
+        }
+        catch (cv_bridge::Exception& e)
+        {
+                ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+        }
 }
 
 
@@ -31,22 +31,22 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 
 int main(int argc, char **argv)
 {
-    
-    std::string camera_topic_name = "/camera/rgb/image_mono";
-    
-    ros::init(argc, argv, "camera_viewer");
-    
-    ros::NodeHandle nh;
-    
-    cv::namedWindow("view");
-    cv::startWindowThread();
-    
-    image_transport::ImageTransport it(nh);
-    image_transport::Subscriber sub = it.subscribe(camera_topic_name.c_str(), 1, imageCallback);
-    
-    ros::spin();
-    
-    cv::destroyWindow("view");
 
-    return 0;
+        std::string camera_topic_name = "/camera/rgb/image_mono";
+
+        ros::init(argc, argv, "camera_viewer");
+
+        ros::NodeHandle nh;
+
+        cv::namedWindow("view");
+        cv::startWindowThread();
+
+        image_transport::ImageTransport it(nh);
+        image_transport::Subscriber sub = it.subscribe(camera_topic_name.c_str(), 1, imageCallback);
+
+        ros::spin();
+
+        cv::destroyWindow("view");
+
+        return 0;
 } // end main()
