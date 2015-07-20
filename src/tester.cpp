@@ -30,7 +30,8 @@ int main(int argc, char **argv)
 
     cout << "Please enter pose value: ";
     //cin >> id;
-    cin >> command;
+    std::getline(std::cin, command);
+
 
     command_msg.data = command;
     /*

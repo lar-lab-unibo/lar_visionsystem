@@ -290,7 +290,12 @@ tf::Transform MathUtils::matToTF(cv::Mat& mat){
 
 void MathUtils::getRotationsByName(std::string name, KDL::Rotation& rot_out){
         rot_out = KDL::Rotation::Identity();
-
+        if(name=="front"){
+          rot_out.DoRotY(M_PI/2.0f);
+        }else if(name=="front_90"){
+          rot_out.DoRotY(M_PI/2.0f);
+          rot_out.DoRotZ(M_PI/2.0f);
+        }
 }
 
 
@@ -313,6 +318,15 @@ void MathUtils::poseToTF(geometry_msgs::Pose& pose, tf::Transform& transform, bo
 
                 transform.setRotation(q);
 
+        }else{
+                pose.position.x = transform.getOrigin()[0]*meter_conversion_ratio;
+                pose.position.y = transform.getOrigin()[1]*meter_conversion_ratio;
+                pose.position.z = transform.getOrigin()[2]*meter_conversion_ratio;
+
+                pose.orientation.x = transform.getRotation()[0];
+                pose.orientation.y = transform.getRotation()[1];
+                pose.orientation.z = transform.getRotation()[2];
+                pose.orientation.w = transform.getRotation()[3];
         }
 }
 
