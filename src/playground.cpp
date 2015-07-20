@@ -20,6 +20,7 @@
 #include "lar_comau/ComauState.h"
 #include "lar_comau/ComauCommand.h"
 #include "sensor_msgs/Joy.h"
+#include "geometry_msgs/Pose.h"
 
 ros::Publisher pub;
 pcl::visualization::PCLVisualizer* viewer;
@@ -171,24 +172,73 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 
 }
 
+void broadcastComauTransforms(  tf::TransformBroadcaster& tf_broadcaster,geometry_msgs::Pose& sending_pose){
+
+        //END EFFECTOR
+        tf::Transform t0U;
+        t0U.setOrigin( tf::Vector3(
+                               sending_pose.position.x/1000.0f,
+                               sending_pose.position.y/1000.0f,
+                               sending_pose.position.z/1000.0f
+                               ));
+
+        tf::Quaternion q(
+                sending_pose.orientation.x,
+                sending_pose.orientation.y,
+                sending_pose.orientation.z,
+                sending_pose.orientation.w
+                );
+
+                q.normalize();
+
+        t0U.setRotation(q);
+        tf_broadcaster.sendTransform(tf::StampedTransform(t0U, ros::Time::now(), "base", "target"));
+
+}
+
+
 
 ros::Publisher comau_cartesian_controller;
-
+lar_comau::ComauCommand setPoint;
+bool start = false;
+float vx = 0.0f;
+float vy = 0.0f;
+float vz = 0.0f;
 void joy_cb(const sensor_msgs::Joy& msg){
         //std::cout << msg << std::endl;
 
-        float vel = 200.0f;
-        float angular_vel = M_PI/10.0f;
+        float vel = 0.001f;
+        float angular_vel = M_PI / 15.0f;
 
-        lar_comau::ComauCommand c;
+        /*lar_comau::ComauCommand c;
         c.command = "joint";
         c.pose = current_comau_state.pose;
         c.pose.position.y += msg.axes[0]*vel;
         c.pose.position.x += msg.axes[1]*vel;
         c.pose.position.z += msg.axes[3]*vel;
+        */
+
+        std::cout << msg.axes[0]<<std::endl;
+          vx =  msg.axes[1]*vel;
+          vy =  msg.axes[0]*vel;
+          vz =  msg.axes[3]*vel;
+
+
+      //KDL::Rotation rot = KDL::Rotation::RPY(0,M_PI/2.0f,0);
+
+        /*double qx,qy,qz,qw;
+        rot.GetQuaternion(qx,qy,qz,qw);
+        c.pose.orientation.x = qx;
+        c.pose.orientation.y = qy;
+        c.pose.orientation.z = qz;
+        c.pose.orientation.w = qw;
+        */
 
         if(msg.buttons[8]==1) {
-                KDL::Rotation rot = KDL::Rotation::RPY(0,M_PI,0);
+              start = true;
+              setPoint.pose = current_comau_state.pose;
+              /*
+                KDL::Rotation rot = KDL::Rotation::RPY(0,M_PI/2.0f,0);
 
                 double qx,qy,qz,qw;
                 rot.GetQuaternion(qx,qy,qz,qw);
@@ -196,19 +246,20 @@ void joy_cb(const sensor_msgs::Joy& msg){
                 c.pose.orientation.y = qy;
                 c.pose.orientation.z = qz;
                 c.pose.orientation.w = qw;
+                */
         }else{
                 KDL::Rotation qr = KDL::Rotation::Quaternion(
-                        c.pose.orientation.x,
-                        c.pose.orientation.y,
-                        c.pose.orientation.z,
-                        c.pose.orientation.w
+                        setPoint.pose.orientation.x,
+                        setPoint.pose.orientation.y,
+                        setPoint.pose.orientation.z,
+                        setPoint.pose.orientation.w
                         );
 
 
                 if(msg.buttons[6]==1) {
-                        qr.DoRotX(angular_vel);
+                        qr = qr * KDL::Rotation::RotX(angular_vel);
                 }else if(msg.buttons[7]==1) {
-                        qr.DoRotX(-angular_vel);
+                        qr = qr * KDL::Rotation::RotX(-angular_vel);
                 }
 
                 if(msg.buttons[1]==1) {
@@ -220,17 +271,27 @@ void joy_cb(const sensor_msgs::Joy& msg){
 
                 double qx,qy,qz,qw;
                 qr.GetQuaternion(qx,qy,qz,qw);
+                setPoint.pose.orientation.x = qx;
+                setPoint.pose.orientation.y = qy;
+                setPoint.pose.orientation.z = qz;
+                setPoint.pose.orientation.w = qw;
+
+
+                /*
+                double qx,qy,qz,qw;
+                qr.GetQuaternion(qx,qy,qz,qw);
                 c.pose.orientation.x = qx;
                 c.pose.orientation.y = qy;
                 c.pose.orientation.z = qz;
                 c.pose.orientation.w = qw;
+                */
         }
 
         if(msg.buttons[5]==1) {
               shoot = true;
         }
 
-        comau_cartesian_controller.publish(c);
+        //comau_cartesian_controller.publish(c);
 }
 
 int
@@ -264,6 +325,13 @@ main (int argc, char** argv)
 
         // Spin
         while(nh.ok() && !viewer->wasStopped()) {
+
+          setPoint.pose.position.y += vy;
+          setPoint.pose.position.x += vx;
+          setPoint.pose.position.z += vz;
+
+              broadcastComauTransforms(br,setPoint.pose);
+                //comau_cartesian_controller.publish(setPoint);
                 viewer->spinOnce();
                 ros::spinOnce();
         }

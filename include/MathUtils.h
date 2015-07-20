@@ -1,4 +1,4 @@
-/* 
+/*
  * File:   MathUtils.h
  * Author: daniele
  *
@@ -12,6 +12,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <math.h>
+#include <kdl/frames_io.hpp>
 
 #include "aruco/aruco.h"
 
@@ -45,9 +46,13 @@ namespace lar_visionsystem{
         static Mat translateT(Mat* transform,float x,float y,float z);
         static Mat dumpMats(vector<Mat>);
         static tf::Transform matToTF(cv::Mat& mat);
+
+        static void getRotationsByName(std::string name, KDL::Rotation& rot_out);
+        static void poseToTF(geometry_msgs::Pose& pose, tf::Transform& transform, bool reverse = false, float meter_conversion_ratio = 1000.0f);
+        static void poseToKDLRotation(geometry_msgs::Pose& pose, KDL::Rotation& rotation, bool reverse = false);
+
     private:
 
     };
 }
 #endif	/* MATHUTILS_H */
-

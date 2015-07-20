@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(lar_visionsystem)
 
+find_package(orocos_kdl REQUIRED)
+
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
@@ -12,7 +14,9 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   tf_conversions
   message_generation
+  message_runtime
   pcl_ros
+  kdl_parser
 )
 
 
@@ -41,7 +45,24 @@ set(ARUCO_LIBS /usr/local/lib/libaruco.so)
 #VisionSystemLegacy
 #set(VISION_SYSTEM_LIBS /usr/local/lib/libVisionSystemLegacy.so)
 
+add_message_files(
+ FILES
+ MarkerApproachCommand.msg
+)
 
+generate_messages(
+  DEPENDENCIES
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+)
+
+catkin_package(
+   CATKIN_DEPENDS
+   message_runtime
+   geometry_msgs
+   std_msgs
+)
 
 #SOPHUS
 #set(SOPHUS_INCLUDE_DIRS /usr/local/include/sophus)
@@ -57,9 +78,6 @@ set(ARUCO_LIBS /usr/local/lib/libaruco.so)
 #   FILES
 #    MarkerImageService.srv
 # )
-
-
-
 
 catkin_package(
 #  INCLUDE_DIRS include
@@ -100,7 +118,7 @@ add_library(lar_visionsystem_commons
         src/utils/MathUtils.cpp
         src/utils/SimpleBluetoothNode.cpp
     )
-target_link_libraries (lar_visionsystem_commons ${OpenCV_LIBS} ${ARUCO_LIBS} bluetooth)
+target_link_libraries (lar_visionsystem_commons ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} bluetooth)
 
 
 #MODULES
@@ -113,6 +131,7 @@ target_link_libraries(camera_viewer ${catkin_LIBRARIES} ${OpenCV_LIBS})
 # 2D MARKER DETECTOR
 add_executable(marker_detector src/marker_detector.cpp)
 target_link_libraries(marker_detector ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} lar_visionsystem_commons)
+add_dependencies(marker_detector ${PROJECT_NAME}_generate_messages_cpp)
 
 # 2D TRACK GENERATOR
 add_executable(track_2d src/track_2d.cpp)
@@ -122,3 +141,15 @@ target_link_libraries(track_2d ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} 
 # PLAYGROUND
 add_executable(playground src/playground.cpp)
 target_link_libraries(playground ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_visionsystem_commons)
+add_dependencies(playground ${PROJECT_NAME}_generate_messages_cpp)
+
+# TESTER
+add_executable(comau_tf_follower src/comau_tf_follower.cpp)
+target_link_libraries(comau_tf_follower ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_visionsystem_commons)
+add_dependencies(comau_tf_follower ${PROJECT_NAME}_generate_messages_cpp)
+
+
+# TESTER
+add_executable(tester src/tester.cpp)
+target_link_libraries(tester ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_visionsystem_commons)
+add_dependencies(tester ${PROJECT_NAME}_generate_messages_cpp)

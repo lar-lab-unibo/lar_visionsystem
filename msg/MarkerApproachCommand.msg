@@ -1,0 +1,5 @@
+string marker_name
+int32 marker_id
+geometry_msgs/TransformStamped transform
+float64 distance
+float64 z_rotation
