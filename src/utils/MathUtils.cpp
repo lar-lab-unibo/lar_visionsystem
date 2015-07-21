@@ -295,6 +295,10 @@ void MathUtils::getRotationsByName(std::string name, KDL::Rotation& rot_out){
         }else if(name=="front_90"){
           rot_out.DoRotY(M_PI/2.0f);
           rot_out.DoRotZ(M_PI/2.0f);
+        }else if(name=="down_y"){
+          rot_out.DoRotY(M_PI);
+        }else if(name=="down_x"){
+          rot_out.DoRotX(M_PI);
         }
 }
 
