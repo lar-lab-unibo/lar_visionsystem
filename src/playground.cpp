@@ -24,6 +24,8 @@
 
 ros::Publisher pub;
 pcl::visualization::PCLVisualizer* viewer;
+std::string save_folder = "";
+int save_counter = 0;
 
 tf::Transform matToTF(cv::Mat& mat){
         tf::Vector3 origin;
@@ -84,18 +86,32 @@ void poseToEigen(lar_comau::ComauState& msg, Eigen::Matrix4f& m){
 
 lar_comau::ComauState current_comau_state;
 void comau_cb(const lar_comau::ComauState& msg){
-
         current_comau_state = msg;
-
 }
 
-typedef pcl::PointXYZ PointType;
+
+unsigned int text_id = 0;
+bool capture = false;
+void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
+                            void* viewer_void)
+{
+        boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer = *static_cast<boost::shared_ptr<pcl::visualization::PCLVisualizer> *> (viewer_void);
+        if (event.getKeySym () == "v" && event.keyDown ())
+        {
+                std::cout << "r was pressed => removing all text" << std::endl;
+                capture = true;
+        }
+}
+
+
+typedef pcl::PointXYZRGBA PointType;
 pcl::PointCloud<PointType>::Ptr cloud_full(new  pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_full_filtered(new  pcl::PointCloud<PointType>);
 pcl::VoxelGrid<PointType> sor;
 pcl::PassThrough<PointType> pass;
 
 bool shoot = false;
+
 void
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
@@ -104,194 +120,69 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 
         pcl::PointCloud<PointType>::Ptr cloud(new  pcl::PointCloud<PointType>);
         pcl::PointCloud<PointType>::Ptr cloud_trans(new  pcl::PointCloud<PointType>);
+        pcl::PointCloud<PointType>::Ptr cloud_trans_filtered(new  pcl::PointCloud<PointType>);
         pcl::PCLPointCloud2 pcl_pc;
         pcl_conversions::toPCL(*input, pcl_pc);
         pcl::fromPCLPointCloud2(pcl_pc, *cloud);
 
 
-        if(shoot) {
-                shoot = false;
-
-                pass.setInputCloud (cloud);
-                pass.setFilterFieldName ("z");
-                pass.setFilterLimits (0.0, 1.3);
-                //pass.setFilterLimitsNegative (true);
-                pass.filter (*cloud);
-
-                Eigen::Matrix4f mat;
-                mat << 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1;
-                poseToEigen(current_comau_state,mat);
-                std::cout << mat <<std::endl;
-
-                pcl::transformPointCloud(*cloud,*cloud_trans,mat);
-
-                sor.setInputCloud (cloud_trans);
-                sor.setLeafSize (0.01f, 0.01f, 0.01f);
-                sor.filter (*cloud_trans);
 
 
-                (*cloud_full) += (*cloud_trans);
+        pass.setInputCloud (cloud);
+        pass.setFilterFieldName ("z");
+        pass.setFilterLimits (0.0, 1.3);
+        //pass.setFilterLimitsNegative (true);
+        pass.filter (*cloud);
+
+        Eigen::Matrix4f mat;
+        mat << 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1;
+        poseToEigen(current_comau_state,mat);
+
+        pcl::transformPointCloud(*cloud,*cloud_trans,mat);
+
+        sor.setInputCloud (cloud_trans);
+        sor.setLeafSize (0.02f, 0.02f, 0.02f);
+        sor.filter (*cloud_trans_filtered);
+
+        if(current_comau_state.moving==false) {
+                capture=false;
+                if(cloud->points.size()>1000){
+                //(*cloud_full) += (*cloud_trans);
+
+                std::ofstream myfile;
+                std::stringstream ss;
+                ss << save_folder << "/"<<save_counter<<".txt";
+
+                myfile.open (ss.str().c_str());
+                myfile << mat;
+                myfile.close();
 
 
-                sor.setInputCloud (cloud_full);
-                sor.setLeafSize (0.01f, 0.01f, 0.01f);
-                sor.filter (*cloud_full_filtered);
+                ss.str("");
+                ss << save_folder << "/" << save_counter<<".pcd";
+                pcl::io::savePCDFileASCII (ss.str().c_str(), *cloud);
 
-
-
-                viewer->removeAllPointClouds();
-                viewer->addPointCloud(cloud_full_filtered, "scene");
-
-                cloud_full = cloud_full_filtered;
-
-                std::cout << "Received: "<<cloud_full->points.size()<<std::endl;
+                std::cout << "Saved snapshot: "<<save_counter<<std::endl;
+                save_counter++;
+              }
         }
-/*
+        /*
+           (*cloud_full) += (*cloud_trans);
 
 
-      sensor_msgs::PointCloud out;
-
-    float dummy_query_data[10] = {
-        0,0,-1,0,
-        0,1,0,0,
-        1,0,0,0,
-        0,0,0,1};
-
-    cv::Mat dummy_query = cv::Mat(2, 4, CV_32F, dummy_query_data);
-     tf::Transform tf = matToTF(dummy_query);
-        tf::TransformListener listener;
-
-    pcl_ros::transformPointCloud ("lar_marker_111", *input, out,listener);
-      //tf::TransformListener::("lar_marker_111",*input,out);
- */
-
-        //sensor_msgs::PointCloud2 out = *input;
-        //out.header.frame_id = "camera_link";
-        // pub.publish(out);
+           sor.setInputCloud (cloud_full);
+           sor.setLeafSize (0.01f, 0.01f, 0.01f);
+           sor.filter (*cloud_full_filtered);
 
 
-}
+         */
+        viewer->removeAllPointClouds();
+        viewer->addPointCloud(cloud_trans, "scene");
+      //viewer->addPointCloud(cloud_full, "full");
 
-void broadcastComauTransforms(  tf::TransformBroadcaster& tf_broadcaster,geometry_msgs::Pose& sending_pose){
-
-        //END EFFECTOR
-        tf::Transform t0U;
-        t0U.setOrigin( tf::Vector3(
-                               sending_pose.position.x/1000.0f,
-                               sending_pose.position.y/1000.0f,
-                               sending_pose.position.z/1000.0f
-                               ));
-
-        tf::Quaternion q(
-                sending_pose.orientation.x,
-                sending_pose.orientation.y,
-                sending_pose.orientation.z,
-                sending_pose.orientation.w
-                );
-
-                q.normalize();
-
-        t0U.setRotation(q);
-        tf_broadcaster.sendTransform(tf::StampedTransform(t0U, ros::Time::now(), "base", "target"));
-
-}
+        //cloud_full = cloud_full_filtered;
 
 
-
-ros::Publisher comau_cartesian_controller;
-lar_comau::ComauCommand setPoint;
-bool start = false;
-float vx = 0.0f;
-float vy = 0.0f;
-float vz = 0.0f;
-void joy_cb(const sensor_msgs::Joy& msg){
-        //std::cout << msg << std::endl;
-
-        float vel = 0.001f;
-        float angular_vel = M_PI / 15.0f;
-
-        /*lar_comau::ComauCommand c;
-        c.command = "joint";
-        c.pose = current_comau_state.pose;
-        c.pose.position.y += msg.axes[0]*vel;
-        c.pose.position.x += msg.axes[1]*vel;
-        c.pose.position.z += msg.axes[3]*vel;
-        */
-
-        std::cout << msg.axes[0]<<std::endl;
-          vx =  msg.axes[1]*vel;
-          vy =  msg.axes[0]*vel;
-          vz =  msg.axes[3]*vel;
-
-
-      //KDL::Rotation rot = KDL::Rotation::RPY(0,M_PI/2.0f,0);
-
-        /*double qx,qy,qz,qw;
-        rot.GetQuaternion(qx,qy,qz,qw);
-        c.pose.orientation.x = qx;
-        c.pose.orientation.y = qy;
-        c.pose.orientation.z = qz;
-        c.pose.orientation.w = qw;
-        */
-
-        if(msg.buttons[8]==1) {
-              start = true;
-              setPoint.pose = current_comau_state.pose;
-              /*
-                KDL::Rotation rot = KDL::Rotation::RPY(0,M_PI/2.0f,0);
-
-                double qx,qy,qz,qw;
-                rot.GetQuaternion(qx,qy,qz,qw);
-                c.pose.orientation.x = qx;
-                c.pose.orientation.y = qy;
-                c.pose.orientation.z = qz;
-                c.pose.orientation.w = qw;
-                */
-        }else{
-                KDL::Rotation qr = KDL::Rotation::Quaternion(
-                        setPoint.pose.orientation.x,
-                        setPoint.pose.orientation.y,
-                        setPoint.pose.orientation.z,
-                        setPoint.pose.orientation.w
-                        );
-
-
-                if(msg.buttons[6]==1) {
-                        qr = qr * KDL::Rotation::RotX(angular_vel);
-                }else if(msg.buttons[7]==1) {
-                        qr = qr * KDL::Rotation::RotX(-angular_vel);
-                }
-
-                if(msg.buttons[1]==1) {
-                        qr.DoRotY(-angular_vel);
-                }else if(msg.buttons[3]==1) {
-                        qr.DoRotY(angular_vel);
-                }
-
-
-                double qx,qy,qz,qw;
-                qr.GetQuaternion(qx,qy,qz,qw);
-                setPoint.pose.orientation.x = qx;
-                setPoint.pose.orientation.y = qy;
-                setPoint.pose.orientation.z = qz;
-                setPoint.pose.orientation.w = qw;
-
-
-                /*
-                double qx,qy,qz,qw;
-                qr.GetQuaternion(qx,qy,qz,qw);
-                c.pose.orientation.x = qx;
-                c.pose.orientation.y = qy;
-                c.pose.orientation.z = qz;
-                c.pose.orientation.w = qw;
-                */
-        }
-
-        if(msg.buttons[5]==1) {
-              shoot = true;
-        }
-
-        //comau_cartesian_controller.publish(c);
 }
 
 int
@@ -301,37 +192,28 @@ main (int argc, char** argv)
         ros::init (argc, argv, "my_pcl_tutorial");
         ros::NodeHandle nh;
 
+
+        std::stringstream ss;
+        ss << "/home/daniele/temp/"<<ros::Time::now();
+        save_folder = ss.str();
+
+        boost::filesystem::create_directory(save_folder);
+
+        std::cout << "DIR:" <<ss.str()<<std::endl;
+
         viewer = new pcl::visualization::PCLVisualizer("viewer");
+        viewer->registerKeyboardCallback (keyboardEventOccurred, (void*)&viewer);
 
         // Create a ROS subscriber for the input point cloud
+        //ros::Subscriber sub = nh.subscribe ("/camera/depth/points", 1, cloud_cb);
         ros::Subscriber sub = nh.subscribe ("/camera/depth_registered/points", 1, cloud_cb);
+
         ros::Subscriber comau_sub = nh.subscribe ("lar_comau/comau_full_state_publisher", 1, comau_cb);
-        ros::Subscriber joy_sub = nh.subscribe ("joy", 1, joy_cb);
-        comau_cartesian_controller = nh.advertise<lar_comau::ComauCommand>("lar_comau/comau_cartesian_controller", 1);
-        //pub = nh.advertise<sensor_msgs::PointCloud2> ("mycloud", 1);
-
-        tf::TransformListener listener;
-
-        tf::StampedTransform t_cam_marker;
-        tf::StampedTransform t_0_marker;
-        tf::StampedTransform t_0_6;
-
-        tf::Transform t_6_0;
-        tf::Transform t_marker_cam;
-
-        tf::Transform t_6_cam;
-
-        tf::TransformBroadcaster br;
 
         // Spin
         while(nh.ok() && !viewer->wasStopped()) {
 
-          setPoint.pose.position.y += vy;
-          setPoint.pose.position.x += vx;
-          setPoint.pose.position.z += vz;
 
-              broadcastComauTransforms(br,setPoint.pose);
-                //comau_cartesian_controller.publish(setPoint);
                 viewer->spinOnce();
                 ros::spinOnce();
         }

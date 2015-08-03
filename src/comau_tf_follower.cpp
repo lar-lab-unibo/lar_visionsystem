@@ -176,14 +176,14 @@ void joy_cb(const sensor_msgs::Joy& msg){
                 MathUtils::poseToKDLRotation(joystick_set_point,joystick_rotation,true);
         }
 
-        if(msg.buttons[5]==1 && GLOBAL_CALIBRATION_ACTIVE) {
+      /*  if(msg.buttons[5]==1 && GLOBAL_CALIBRATION_ACTIVE) {
                 lar_comau::ComauCommand comau_command;
                 comau_command.command = "tool";
                 MathUtils::poseToTF(comau_command.pose,t_6_cam,true,1.0f);
 
                 std::cout << comau_command <<std::endl;
                 GLOBAL_NODE_ACTIVE_STATUS = false;
-        }
+        }*/
 
         target_update = msg.buttons[11]==1;
 
@@ -408,28 +408,7 @@ main (int argc, char** argv)
                                 MathUtils::poseToKDLRotation(follow_target_approach_pose,approach_rotation,true);
 
                                 current_position = target_approach;
-                                /**
-                                   try{
-                                        ss.str("");
-                                        ss2.str("");
-                                        ss << "lar_marker_"<<follow_target_id;
-                                        ss2 << "lar_marker_approach_"<<follow_target_id;
-                                        tf::StampedTransform marker;
-                                        tf::StampedTransform marker_approach;
-                                        tf::Transform target;
-                                        tf::Transform target_approach;
-                                        listener->lookupTransform("camera_rgb_frame", ss.str().c_str(), ros::Time(0), marker);
-                                        listener->lookupTransform(ss.str().c_str(), ss2.str().c_str(), ros::Time(0), marker_approach);
-                                        target = t_0_6*marker;
-                                        target_approach = target*marker_approach;
-                                        tf_broadcaster->sendTransform(tf::StampedTransform(target, ros::Time::now(), "base", "current_target"));
-                                        tf_broadcaster->sendTransform(tf::StampedTransform(target_approach, ros::Time::now(), "base", "current_target_approach"));
 
-                                        current_position = target_approach;
-
-                                   }  catch (tf::TransformException ex) {
-                                        ROS_ERROR("%s",ex.what());
-                                   }**/
                         }
                 }
 
