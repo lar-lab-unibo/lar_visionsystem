@@ -128,11 +128,11 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 
 
 
-        pass.setInputCloud (cloud);
+      /*  pass.setInputCloud (cloud);
         pass.setFilterFieldName ("z");
         pass.setFilterLimits (0.0, 1.3);
         //pass.setFilterLimitsNegative (true);
-        pass.filter (*cloud);
+        pass.filter (*cloud);*/
 
         Eigen::Matrix4f mat;
         mat << 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1;
@@ -181,6 +181,35 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
       //viewer->addPointCloud(cloud_full, "full");
 
         //cloud_full = cloud_full_filtered;
+
+
+}
+
+void
+cloud_cb_bak (const sensor_msgs::PointCloud2ConstPtr& input)
+{
+        // Create a container for the data.
+        sensor_msgs::PointCloud2 output;
+
+        pcl::PointCloud<PointType>::Ptr cloud(new  pcl::PointCloud<PointType>);
+        pcl::PointCloud<PointType>::Ptr cloud_trans(new  pcl::PointCloud<PointType>);
+        pcl::PointCloud<PointType>::Ptr cloud_trans_filtered(new  pcl::PointCloud<PointType>);
+        pcl::PCLPointCloud2 pcl_pc;
+        pcl_conversions::toPCL(*input, pcl_pc);
+        pcl::fromPCLPointCloud2(pcl_pc, *cloud);
+
+        pass.setInputCloud (cloud);
+        pass.setFilterFieldName ("z");
+        pass.setFilterLimits (0.0, 1.3);
+        //pass.setFilterLimitsNegative (true);
+        pass.filter (*cloud);
+
+        std::cout << "Cloud points: "<<cloud->points.size()<<" "<<cloud->width<<","<<cloud->height<<std::endl;
+
+
+        viewer->removeAllPointClouds();
+        viewer->addPointCloud(cloud, "scene");
+
 
 
 }
