@@ -288,17 +288,18 @@ tf::Transform MathUtils::matToTF(cv::Mat& mat){
         return transform;
 }
 
+
 void MathUtils::getRotationsByName(std::string name, KDL::Rotation& rot_out){
         rot_out = KDL::Rotation::Identity();
-        if(name=="front"){
-          rot_out.DoRotY(M_PI/2.0f);
-        }else if(name=="front_90"){
-          rot_out.DoRotY(M_PI/2.0f);
-          rot_out.DoRotZ(M_PI/2.0f);
-        }else if(name=="down_y"){
-          rot_out.DoRotY(M_PI);
-        }else if(name=="down_x"){
-          rot_out.DoRotX(M_PI);
+        if(name=="front") {
+                rot_out.DoRotY(M_PI/2.0f);
+        }else if(name=="front_90") {
+                rot_out.DoRotY(M_PI/2.0f);
+                rot_out.DoRotZ(M_PI/2.0f);
+        }else if(name=="down_y") {
+                rot_out.DoRotY(M_PI);
+        }else if(name=="down_x") {
+                rot_out.DoRotX(M_PI);
         }
 }
 
@@ -332,6 +333,87 @@ void MathUtils::poseToTF(geometry_msgs::Pose& pose, tf::Transform& transform, bo
                 pose.orientation.z = transform.getRotation()[2];
                 pose.orientation.w = transform.getRotation()[3];
         }
+}
+
+void MathUtils::eigenToTF(Eigen::Matrix4f& matrix, tf::Transform& transform, bool reverse, float meter_conversion_ratio){
+        if(!reverse) {
+                transform.setOrigin( tf::Vector3(
+                                             matrix(0,3)/ meter_conversion_ratio,
+                                             matrix(1,3)/ meter_conversion_ratio,
+                                             matrix(2,3)/ meter_conversion_ratio
+                                             ));
+
+                tf::Matrix3x3 mat3;
+                for(int i = 0; i < 3; i++) {
+                        for(int j = 0; j < 3; j++) {
+                                mat3[i][j] = matrix(i,j);
+                        }
+                }
+                tf::Quaternion q;
+                mat3.getRotation(q);
+                q.normalize();
+                transform.setRotation(q);
+        }else{
+
+                matrix << 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1;
+
+                matrix(0,3) = transform.getOrigin()[0]*meter_conversion_ratio;
+                matrix(1,3) = transform.getOrigin()[1]*meter_conversion_ratio;
+                matrix(2,3) = transform.getOrigin()[2]*meter_conversion_ratio;
+
+                tf::Matrix3x3 rot;
+                rot.setRotation(transform.getRotation().normalized());
+
+                for(int i = 0; i < 3; i++) {
+                        for(int j = 0; j < 3; j++) {
+                                matrix(i,j) = rot[i][j];
+                        }
+                }
+        }
+}
+
+void MathUtils::transformToSphereApproach(tf::Transform& tf_source,tf::Transform& tf_target, float distance, float elevation, float azimuth, float correction){
+
+        Eigen::Matrix4f marker_m;
+        MathUtils::eigenToTF(marker_m,tf_source,true,1.0);
+
+        Eigen::Matrix4f delta;
+        delta <<
+        -1,0,0,0,
+        0,1,0,0,
+        0,0,-1,distance,
+        0,0,0,1;
+
+
+        Eigen::Matrix4f rot_y;
+        Eigen::Matrix4f rot_z;
+        Eigen::Matrix4f rot_w;
+        MathUtils::eigenFromRPY(rot_y,0,elevation,0);
+        MathUtils::eigenFromRPY(rot_z,0,0,azimuth);
+        MathUtils::eigenFromRPY(rot_w,0,0,correction);
+        marker_m = marker_m * rot_z;
+        marker_m = marker_m * rot_y;
+        marker_m = marker_m * delta;
+        marker_m = marker_m * rot_w;
+
+          MathUtils::eigenToTF(marker_m,tf_target,false,1.0f);
+}
+
+void MathUtils::eigenFromRPY(Eigen::Matrix4f& matrix, float roll, float pitch, float yaw){
+
+        tf::Matrix3x3 rot;
+        rot.setRPY(roll,pitch,yaw);
+
+
+        for(int i = 0; i < 3; i++) {
+                for(int j = 0; j < 3; j++) {
+                        matrix(i,j) = rot[i][j];
+                }
+        }
+        matrix(0,3) = 0.0f;
+        matrix(1,3) = 0.0f;
+        matrix(2,3) = 0.0f;
+        matrix(3,3) = 1.0f;
 }
 
 void MathUtils::poseToKDLRotation(geometry_msgs::Pose& pose, KDL::Rotation& rotation, bool reverse){

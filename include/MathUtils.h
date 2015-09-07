@@ -49,8 +49,11 @@ namespace lar_visionsystem{
 
         static void getRotationsByName(std::string name, KDL::Rotation& rot_out);
         static void poseToTF(geometry_msgs::Pose& pose, tf::Transform& transform, bool reverse = false, float meter_conversion_ratio = 1000.0f);
+        static void eigenToTF(Eigen::Matrix4f& matrix, tf::Transform& transform, bool reverse = false, float meter_conversion_ratio = 1000.0f);
+        static void eigenFromRPY(Eigen::Matrix4f& matrix,float roll, float pitch, float yaw);
         static void poseToKDLRotation(geometry_msgs::Pose& pose, KDL::Rotation& rotation, bool reverse = false);
 
+        static void transformToSphereApproach(tf::Transform& tf_source,tf::Transform& tf_target, float distance, float elevation, float azimuth, float correction);
     private:
 
     };

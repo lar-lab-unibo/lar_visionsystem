@@ -5,7 +5,7 @@
 #include "aruco/aruco.h"
 
 #include <image_transport/image_transport.h>
-#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
 
 #include <tf/transform_broadcaster.h>
@@ -25,8 +25,8 @@ static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy
 
 //std::string camera_topic_name = "/usb_cam/image_raw";///camera/rgb/image_mono";
 //std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/lifeCamera640x480.yml";
-std::string camera_topic_name = "/camera/rgb/image_mono";
-std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/calibrations/kinect.yml";
+std::string camera_topic_name = "/camera/rgb/image_raw";
+std::string camera_info_file_name = "/home/daniele/work/workspace_ros/src/lar_visionsystem/data/calibrations/kinect.yml";
 
 
 ros::NodeHandle* nh = NULL;
@@ -139,6 +139,7 @@ targetMarkerReceived(const lar_visionsystem::MarkerApproachCommand& command){
 int main(int argc, char **argv)
 {
         /** Camera Parameters */
+        std::cout << "Reading from: "<<camera_info_file_name<<std::endl;
         camera_parameters.readFromXMLFile(camera_info_file_name);
 
 
@@ -146,6 +147,7 @@ int main(int argc, char **argv)
         ros::init(argc, argv, "marker_detector");
         nh = new ros::NodeHandle();
 
+        std::cout << "Marker detector created!" <<std::endl;
 
         image_transport::ImageTransport it(*nh);
         image_transport::Subscriber sub = it.subscribe(camera_topic_name.c_str(), 1, imageCallback);
@@ -178,7 +180,7 @@ int main(int argc, char **argv)
 
                         marker_list.data.push_back(iter->first);
 
-                        ss.str(""); 
+                        ss.str("");
                         ss << "lar_marker_"<<iter->first;
                         //std::cout << ss.str()<<std::endl;
 

@@ -115,6 +115,7 @@ bool shoot = false;
 void
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
+
         // Create a container for the data.
         sensor_msgs::PointCloud2 output;
 
@@ -128,11 +129,11 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 
 
 
-      /*  pass.setInputCloud (cloud);
-        pass.setFilterFieldName ("z");
-        pass.setFilterLimits (0.0, 1.3);
-        //pass.setFilterLimitsNegative (true);
-        pass.filter (*cloud);*/
+        /*  pass.setInputCloud (cloud);
+           pass.setFilterFieldName ("z");
+           pass.setFilterLimits (0.0, 1.3);
+           //pass.setFilterLimitsNegative (true);
+           pass.filter (*cloud);*/
 
         Eigen::Matrix4f mat;
         mat << 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1;
@@ -146,25 +147,25 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 
         if(current_comau_state.moving==false) {
                 capture=false;
-                if(cloud->points.size()>1000){
-                //(*cloud_full) += (*cloud_trans);
+                if(cloud->points.size()>1000) {
+                        //(*cloud_full) += (*cloud_trans);
 
-                std::ofstream myfile;
-                std::stringstream ss;
-                ss << save_folder << "/"<<save_counter<<".txt";
+                        std::ofstream myfile;
+                        std::stringstream ss;
+                        ss << save_folder << "/"<<save_counter<<".txt";
 
-                myfile.open (ss.str().c_str());
-                myfile << mat;
-                myfile.close();
+                        myfile.open (ss.str().c_str());
+                        myfile << mat;
+                        myfile.close();
 
 
-                ss.str("");
-                ss << save_folder << "/" << save_counter<<".pcd";
-                pcl::io::savePCDFileASCII (ss.str().c_str(), *cloud);
+                        ss.str("");
+                        ss << save_folder << "/" << save_counter<<".pcd";
+                        pcl::io::savePCDFileASCII (ss.str().c_str(), *cloud);
 
-                std::cout << "Saved snapshot: "<<save_counter<<std::endl;
-                save_counter++;
-              }
+                        std::cout << "Saved snapshot: "<<save_counter<<std::endl;
+                        save_counter++;
+                }
         }
         /*
            (*cloud_full) += (*cloud_trans);
@@ -178,7 +179,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
          */
         viewer->removeAllPointClouds();
         viewer->addPointCloud(cloud_trans, "scene");
-      //viewer->addPointCloud(cloud_full, "full");
+        //viewer->addPointCloud(cloud_full, "full");
 
         //cloud_full = cloud_full_filtered;
 
