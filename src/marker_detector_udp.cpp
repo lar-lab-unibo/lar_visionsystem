@@ -72,36 +72,54 @@ cv::Mat current_image;
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
         cv::Mat source = cv_bridge::toCvShare(msg, "bgr8")->image;
+        cv::flip(source,source,-1);
         cv::blur( source, source, cv::Size(3,3));
         marker_detector.detect(source, markers_list, camera_parameters, marker_size, false);
 
         float alpha = 0.99f;
         //float alpha = 0.11f;
 
+        const int DATA_SIZE = 16*5 + 11;
+        float* data = new float[DATA_SIZE];
+
+        int id_pointer = 1;
+        int data_pointer = 11;
+
+        for(int n = 0; n < DATA_SIZE; n++) {
+                data[n] = -1;
+        }
+        data[0] = markers_list.size();
+
         for (unsigned int i = 0; i < markers_list.size(); i++) {
                 cv::Mat T = lar_visionsystem::MathUtils::getTMarker(markers_list[i]);
                 //std::cout <<"\n"<<markers_list[i].id<<":  "<<  T.at<float>(0,2)<<","<< T.at<float>(1,2)<<","<< T.at<float>(2,2)<<"\n";
                 tf::Transform tf = lar_visionsystem::MathUtils::matToTF(T);
 
-                if(markers_list[i].id==800) {
-                        float* data = new float[16];
-                        int pointer = 0;
-                        for (size_t i = 0; i < 4; i++) {
-                                for (size_t j = 0; j < 4; j++) {
-                                        data[pointer++] = T.at<float>(i,j);
-                                        //std::cout << "F"<<(pointer-1)<<": "<<data[pointer-1]<<std::endl;
-                                }
+
+
+                //T.at<float>(0,0)  = -T.at<float>(0,0);
+                //T.at<float>(1,1)  = -T.at<float>(1,1);
+
+
+                //if(markers_list[i].id==800) {
+
+                int pointer = 0;
+                //T.at<float>(3,0) = markers_list[i].id;
+                /*T.at<float>(0,3) = T.at<float>(0,3)*1000.f;
+                   T.at<float>(1,3) = T.at<float>(1,3)*1000.f;
+                   T.at<float>(2,3) = T.at<float>(2,3)*1000.f;*/
+                for (size_t i = 0; i < 4; i++) {
+                        for (size_t j = 0; j < 4; j++) {
+
+                                data[data_pointer++] = T.at<float>(i,j);
+                                //std::cout << "F"<<(pointer-1)<<": "<<data[pointer-1]<<std::endl;
                         }
-
-                        if (sendto(s, data, 16*sizeof(float), 0, (struct sockaddr*) &si_me, slen) == -1)
-                        {
-                                //std::cout << "Send error!\n";
-                        }else{
-                                std::cout << "Send ok!\n";
-
-                        }
-
                 }
+
+                data[id_pointer++] =  markers_list[i].id;
+
+
+                //}
 
                 /*
                    std::map<int, tf::Transform>::iterator iter = filtered_markers_tf.find(markers_list[i].id);
@@ -117,6 +135,12 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
                  */
 
         }
+        if (sendto(s, data, DATA_SIZE*sizeof(float), 0, (struct sockaddr*) &si_me, slen) == -1)
+        {
+                //std::cout << "Send error!\n";
+        }else{
+                std::cout << "Sent:\n"<<data[0]<<std::endl;
+        }
 
         for (unsigned int i = 0; i < markers_list.size(); i++) {
                 if(current_approach_target==markers_list[i].id) {
@@ -127,7 +151,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
                 aruco::CvDrawingUtils::draw3dAxis(source, markers_list[i], camera_parameters);
         }
 
-        cv::flip(source,source,-1);
+        //cv::flip(source,source,-1);
         cv::imshow("view", source);
         current_image = source;
         cv::waitKey(1000/30);
@@ -158,9 +182,9 @@ int main(int argc, char **argv)
         memset((char *) &si_me, 0, sizeof(si_me));
 
         si_me.sin_family = AF_INET;
-        si_me.sin_port = htons(9999);
+        si_me.sin_port = htons(10008);
         //si_me.sin_addr.s_addr = htonl(INADDR_ANY);
-        inet_pton(AF_INET, "192.168.7.18", &(si_me.sin_addr));
+        inet_pton(AF_INET, "192.168.7.66", &(si_me.sin_addr));
 
 //bind socket to port
 
