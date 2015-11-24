@@ -15,6 +15,7 @@
 
 #include "lar_visionsystem/MarkerApproachCommand.h"
 #include "std_msgs/Int32MultiArray.h"
+#include "std_msgs/Float64MultiArray"
 
 static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy/data/kinect_parameters.txt";
 
@@ -25,9 +26,7 @@ static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy
 
 //std::string camera_topic_name = "/usb_cam/image_raw";///camera/rgb/image_mono";
 //std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/lifeCamera640x480.yml";
-//std::string camera_topic_name = "/camera/rgb/image_raw";
-std::string camera_topic_name = "/camera/ir/image";
-
+std::string camera_topic_name = "/camera/rgb/image_raw";
 std::string camera_info_file_name = "/home/daniele/work/workspace_ros/src/lar_visionsystem/data/calibrations/kinect.yml";
 
 
@@ -39,7 +38,9 @@ tf::TransformBroadcaster* br;
  */
 aruco::CameraParameters camera_parameters;
 aruco::MarkerDetector marker_detector;
-float marker_size = 0.1;
+float marker_size = 0.1f;
+int marker_id =  800;
+
 vector<aruco::Marker> markers_list;
 vector<aruco::Marker> filtered_markers_list;
 std::map<int, tf::Transform> filtered_markers_tf;
@@ -67,10 +68,6 @@ cv::Mat current_image;
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
         cv::Mat source = cv_bridge::toCvShare(msg, "bgr8")->image;
-
-        source.convertTo(source,CV_8UC1);
-        std::cout << source.type()<<std::endl;
-        cv::flip(source,source,-1);
         cv::blur( source, source, cv::Size(3,3));
         marker_detector.detect(source, markers_list, camera_parameters, marker_size, false);
 
@@ -104,37 +101,12 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
                 aruco::CvDrawingUtils::draw3dAxis(source, markers_list[i], camera_parameters);
         }
 
-      //  cv::flip(source,source,-1);
+        cv::flip(source,source,-1);
         cv::imshow("view", source);
         current_image = source;
         cv::waitKey(1000/30);
 }
 
-
-void
-targetMarkerReceived(const lar_visionsystem::MarkerApproachCommand& command){
-        if(command.update_target_only) {
-                current_approach_target = command.marker_id;
-        }else{
-                tf::Transform transform;
-
-                transform.setOrigin(tf::Vector3(
-                                            command.pose.position.x,
-                                            command.pose.position.y,
-                                            command.pose.position.z
-                                            ));
-
-                tf::Quaternion q = tf::Quaternion(
-                        command.pose.orientation.x,
-                        command.pose.orientation.y,
-                        command.pose.orientation.z,
-                        command.pose.orientation.w
-                        );
-                transform.setRotation(q.normalized());
-
-                approach_markers_tf[command.marker_id] = transform;
-        }
-}
 
 
 /*--------------------------------------------------------------------
@@ -147,20 +119,21 @@ int main(int argc, char **argv)
         /** Camera Parameters */
         std::cout << "Reading from: "<<camera_info_file_name<<std::endl;
         camera_parameters.readFromXMLFile(camera_info_file_name);
-
-
-
-        ros::init(argc, argv, "marker_detector");
+        ros::init(argc, argv, "marker_detector_target");
         nh = new ros::NodeHandle();
 
-        std::cout << "Marker detector created!" <<std::endl;
+        /* PARAMS */
+        nh.param<double>("marker_size", marker_size, 0.1f);
+        nh.param<int>("marker_id", marker_id, 800);
+
+
+        std::cout << "marker_detector_target created!" <<std::endl;
 
         image_transport::ImageTransport it(*nh);
         image_transport::Subscriber sub = it.subscribe(camera_topic_name.c_str(), 1, imageCallback);
         image_transport::Publisher image_publisher = it.advertise("lar_visionsystem/marker_detector_feedback", 1);
-        ros::Publisher marker_list_publisher = nh->advertise<std_msgs::Int32MultiArray>("lar_visionsystem/markers_list", 1);
+        ros::Publisher marker_target_publisher = it.advertise<lar_comau::ComauState>("lar_visionsystem/marker_detector_single_target", 1);
 
-        ros::Subscriber marker_approach = nh->subscribe( "lar_visionsystem/marker_approach",1,targetMarkerReceived );
 
         br = new tf::TransformBroadcaster();
 
@@ -174,6 +147,7 @@ int main(int argc, char **argv)
         cv::startWindowThread();
 
         std_msgs::Int32MultiArray marker_list;
+        std_msgs::Float64MultiArray marker_array:
 
         while(nh->ok()) {
 
@@ -182,6 +156,9 @@ int main(int argc, char **argv)
                 std::stringstream ss;
                 std::stringstream ss2;
                 marker_list.data.clear();
+                marker_array.data.clear();
+                
+                marker_array.data.clear();
                 for (iter = filtered_markers_tf.begin(); iter != filtered_markers_tf.end(); iter++) {
 
                         marker_list.data.push_back(iter->first);
@@ -190,12 +167,8 @@ int main(int argc, char **argv)
                         ss << "lar_marker_"<<iter->first;
                         //std::cout << ss.str()<<std::endl;
 
-                        br->sendTransform(tf::StampedTransform(iter->second, ros::Time(0),  "camera_rgb_frame",ss.str().c_str()));
+                        if(iter->first==marker_id) {
 
-                        if(iter->first==current_approach_target) {
-                                ss2.str("");
-                                ss2 << "lar_marker_approach_"<<current_approach_target;
-                                br->sendTransform(tf::StampedTransform(approach_markers_tf[current_approach_target], ros::Time(0),  ss.str().c_str(),ss2.str().c_str()));
                         }
 
                 }
