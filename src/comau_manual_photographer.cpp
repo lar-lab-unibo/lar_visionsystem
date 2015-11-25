@@ -27,6 +27,7 @@
 #include <pcl_ros/impl/transforms.hpp>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/fast_bilateral.h>
 
 //CUSTOM NODES
 
@@ -59,8 +60,11 @@ std::string save_folder;
 Noiser noiser;
 bool cloud_consuming = false;
 bool manual_merge = false;
+bool bilateral = false;
+double bilateral_sd = 3.0f;
+double bilateral_sr = 0.1f;
 double max_z= 1.0;
-int slot = 20;
+int slots = 20;
 
 ros::Subscriber sub_cloud;
 ros::Subscriber sub_pose;
@@ -89,14 +93,18 @@ cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         pcl_conversions::toPCL(*input, pcl_pc);
         pcl::fromPCLPointCloud2(pcl_pc, *cloud);
 
-        pcl::PassThrough<PointType> pass;
-        pass.setInputCloud (cloud);
-        pass.setFilterFieldName ("z");
-        pass.setFilterLimits (0.0, max_z);
-        //pass.setFilterLimitsNegative (true);
-        pass.filter (*cloud_cut);
+        if(bilateral){
+          pcl::FastBilateralFilter<PointType> bif;
+          bif.setSigmaS(bilateral_sd);
+          bif.setSigmaR(bilateral_sr);
+          bif.setInputCloud(cloud);
+          bif.applyFilter(*cloud);
+        }
 
-        pcl::transformPointCloud(*cloud_cut, *cloud_trans, T_0_CAMERA);
+
+
+
+        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
 
 
 
@@ -166,7 +174,7 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                         if(manual_merge){
                             (*cloud_full_filtered)+=(*cloud_trans);
                         }else{
-                            data_to_consume = slot;
+                            data_to_consume = slots;
                         }
                 }
         }
@@ -186,7 +194,7 @@ void consumeData(){
 
                                 ss.str("");
                                 ss << save_folder << "/" << save_counter << ".pcd";
-                                pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud_cut);
+                                pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud);
 
                                 ss.str("");
                                 ss << save_folder << "/" << save_counter << "_robot.txt";
@@ -216,7 +224,7 @@ void consumeData(){
                         }
                         cloud_consuming = false;
                 }
-                boost::this_thread::sleep(boost::posix_time::milliseconds(500));
+                boost::this_thread::sleep(boost::posix_time::milliseconds(50));
         }
 
 }
@@ -231,7 +239,11 @@ main(int argc, char** argv) {
         nh = new ros::NodeHandle("~");
 
         nh->param<bool>("manual_merge", manual_merge, false);
-        nh->param<int>("slot", slot, 20);
+        nh->param<bool>("bilateral", bilateral, false);
+        nh->param<double>("sd", bilateral_sd, 3.0);
+        nh->param<double>("sr", bilateral_sr, 0.1);
+
+        nh->param<int>("slots", slots, 20);
         nh->param<double>("max_z", max_z, 1.0);
 /*
         dynamic_reconfigure::Server<trimod_gripper::LwrManualPhotographerConfig> srv;
