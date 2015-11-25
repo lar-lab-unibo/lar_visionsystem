@@ -26,6 +26,7 @@
 #include <pcl_ros/transforms.h>
 #include <pcl_ros/impl/transforms.hpp>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/passthrough.h>
 
 //CUSTOM NODES
 
@@ -48,7 +49,7 @@ ros::NodeHandle* nh;
 //CLOUDS & VIEWER
 pcl::visualization::PCLVisualizer* viewer;
 
-pcl::PointCloud<PointType>::Ptr cloud_full(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud_cut(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_noise(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans_filtered(new pcl::PointCloud<PointType>);
@@ -57,6 +58,9 @@ pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
 std::string save_folder;
 Noiser noiser;
 bool cloud_consuming = false;
+bool manual_merge = false;
+double max_z= 1.0;
+int slot = 20;
 
 ros::Subscriber sub_cloud;
 ros::Subscriber sub_pose;
@@ -85,14 +89,22 @@ cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         pcl_conversions::toPCL(*input, pcl_pc);
         pcl::fromPCLPointCloud2(pcl_pc, *cloud);
 
+        pcl::PassThrough<PointType> pass;
+        pass.setInputCloud (cloud);
+        pass.setFilterFieldName ("z");
+        pass.setFilterLimits (0.0, max_z);
+        //pass.setFilterLimitsNegative (true);
+        pass.filter (*cloud_cut);
 
-        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
+        pcl::transformPointCloud(*cloud_cut, *cloud_trans, T_0_CAMERA);
+
 
 
 
         viewer->removeAllPointClouds();
         viewer->addPointCloud(cloud_trans, "view");
-        viewer->addPointCloud(cloud_full_filtered, "scene");
+        if(manual_merge)
+          viewer->addPointCloud(cloud_full_filtered, "scene");
 }
 
 /*
@@ -150,9 +162,12 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
         if (event.getKeySym() == "v" && event.keyDown()) {
                 if (cloud->points.size() > 1000) {
                         //(*cloud_full) += (*cloud_trans);
-                        //            //
-                        data_to_consume = 1;
-                        //        }
+                        std::cout << manual_merge<<std::endl;
+                        if(manual_merge){
+                            (*cloud_full_filtered)+=(*cloud_trans);
+                        }else{
+                            data_to_consume = slot;
+                        }
                 }
         }
 }
@@ -165,44 +180,34 @@ void consumeData(){
                         cloud_consuming = true;
                         if(cloud->points.size()>0 ) {
 
-                                /*
-                                    std::ofstream myfile;
-                                    std::stringstream ss;
 
-                                    ss.str("");
-                                    ss << save_folder << "/" << save_counter << ".pcd";
-                                    pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud);
+                                std::ofstream myfile;
+                                std::stringstream ss;
 
-                                    ss.str("");
-                                    ss << save_folder << "/" << save_counter << "_noise.pcd";
-                                    pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud_noise);
+                                ss.str("");
+                                ss << save_folder << "/" << save_counter << ".pcd";
+                                pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud_cut);
 
-                                    ss.str("");
-                                    ss << save_folder << "/" << save_counter << "_robot.txt";
-                                    myfile.open(ss.str().c_str());
-                                    myfile << T_0_ROBOT;
-                                    myfile.close();
+                                ss.str("");
+                                ss << save_folder << "/" << save_counter << "_robot.txt";
+                                myfile.open(ss.str().c_str());
+                                myfile << T_0_ROBOT;
+                                myfile.close();
 
-                                    ss.str("");
-                                    ss << save_folder << "/" << save_counter << "_ee.txt";
-                                    myfile.open(ss.str().c_str());
-                                    myfile << T_ROBOT_CAMERA;
-                                    myfile.close();
+                                ss.str("");
+                                ss << save_folder << "/" << save_counter << "_ee.txt";
+                                myfile.open(ss.str().c_str());
+                                myfile << T_ROBOT_CAMERA;
+                                myfile.close();
 
-                                    ss.str("");
-                                    ss << save_folder << "/" << save_counter << ".txt";
-                                    myfile.open(ss.str().c_str());
-                                    myfile << T_0_CAMERA;
-                                    myfile.close();
+                                ss.str("");
+                                ss << save_folder << "/" << save_counter << ".txt";
+                                myfile.open(ss.str().c_str());
+                                myfile << T_0_CAMERA;
+                                myfile.close();
 
-                                 */
 
-                                 (*cloud_full_filtered)+=(*cloud_trans);
-                                 // Create the filtering object
-                                 pcl::VoxelGrid<PointType> sor;
-                                 sor.setInputCloud (cloud_full_filtered);
-                                 sor.setLeafSize (0.01f, 0.01f, 0.01f);
-                                 sor.filter (*cloud_full_filtered);
+
 
                                 std::cout << "Saving shot: "<<save_counter<<std::endl;
                                 save_counter++;
@@ -211,7 +216,7 @@ void consumeData(){
                         }
                         cloud_consuming = false;
                 }
-                boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+                boost::this_thread::sleep(boost::posix_time::milliseconds(500));
         }
 
 }
@@ -223,8 +228,11 @@ main(int argc, char** argv) {
         // Initialize ROS
         ros::init(argc, argv, "comau_manual_photographer");
         ROS_INFO("comau_manual_photographer node started...");
-        nh = new ros::NodeHandle();
+        nh = new ros::NodeHandle("~");
 
+        nh->param<bool>("manual_merge", manual_merge, false);
+        nh->param<int>("slot", slot, 20);
+        nh->param<double>("max_z", max_z, 1.0);
 /*
         dynamic_reconfigure::Server<trimod_gripper::LwrManualPhotographerConfig> srv;
         dynamic_reconfigure::Server<trimod_gripper::LwrManualPhotographerConfig>::CallbackType f;
@@ -241,17 +249,17 @@ main(int argc, char** argv) {
         Eigen::Matrix4f correction;
         lar_tools::create_eigen_4x4(0, 0, 0, 0,0, M_PI, correction);
         lar_tools::create_eigen_4x4(
-            //  0.065f+0.003f,-0.025f,-0.095f-0.07f,0, M_PI, M_PI/2.0f,
-            //    T_ROBOT_CAMERA);
+                //  0.065f+0.003f,-0.025f,-0.095f-0.07f,0, M_PI, M_PI/2.0f,
+                //    T_ROBOT_CAMERA);
 
                 0.061,
-                -0.05,//-0.0094,
+                -0.0094,
                 -0.1488,
                 179.0 * M_PI/180.0f,
                 0,
                 -89.5 * M_PI/180.0f,
                 T_ROBOT_CAMERA);
-                T_ROBOT_CAMERA=T_ROBOT_CAMERA*correction;
+        T_ROBOT_CAMERA=T_ROBOT_CAMERA*correction;
         //        std::stringstream ss;
         //        ss << "/home/daniele/temp/" << ros::Time::now();
         //        save_folder = ss.str();
