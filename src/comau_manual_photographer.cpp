@@ -1,0 +1,292 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+
+//ROS
+
+#include <ros/ros.h>
+#include <sensor_msgs/JointState.h>
+#include <trajectory_msgs/JointTrajectory.h>
+#include <trajectory_msgs/JointTrajectoryPoint.h>
+#include <kdl/frames_io.hpp>
+#include "geometry_msgs/Pose.h"
+
+//OPENCV
+#include <opencv2/opencv.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <image_transport/image_transport.h>
+
+
+//PCL
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl_ros/transforms.h>
+#include <pcl_ros/impl/transforms.hpp>
+#include <pcl/filters/voxel_grid.h>
+
+//CUSTOM NODES
+
+#include "lar_tools.h"
+#include "lar_vision/commons/lar_vision_commons.h"
+#include "lar_vision/commons/Noiser.h"
+
+
+//boost
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/thread/thread.hpp>
+
+using namespace std;
+using namespace lar_vision;
+
+//ROS
+ros::NodeHandle* nh;
+
+
+//CLOUDS & VIEWER
+pcl::visualization::PCLVisualizer* viewer;
+
+pcl::PointCloud<PointType>::Ptr cloud_full(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud_trans(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud_noise(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud_trans_filtered(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud_full_filtered(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
+std::string save_folder;
+Noiser noiser;
+bool cloud_consuming = false;
+
+ros::Subscriber sub_cloud;
+ros::Subscriber sub_pose;
+image_transport::Subscriber sub_rgb;
+image_transport::Subscriber sub_depth;
+
+
+sensor_msgs::JointState joint_msg;
+
+
+/** TRANSFORMS */
+Eigen::Matrix4f T_0_BASE;
+Eigen::Matrix4f T_BASE_ROBOT;
+Eigen::Matrix4f T_ROBOT_CAMERA;
+Eigen::Matrix4f T_0_CAMERA;
+Eigen::Matrix4f T_0_ROBOT;
+
+int data_to_consume = 0;
+
+
+
+void
+cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
+        if(cloud_consuming) return;
+        pcl::PCLPointCloud2 pcl_pc;
+        pcl_conversions::toPCL(*input, pcl_pc);
+        pcl::fromPCLPointCloud2(pcl_pc, *cloud);
+
+
+        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
+
+
+
+        viewer->removeAllPointClouds();
+        viewer->addPointCloud(cloud_trans, "view");
+        viewer->addPointCloud(cloud_full_filtered, "scene");
+}
+
+/*
+   cv::Mat current_rgb;
+   cv::Mat current_depth;
+   bool saving = false;
+   bool rgb_ready = false;
+   bool depth_ready = false;
+ */
+
+/*
+   void
+   rgb_cb(const sensor_msgs::ImageConstPtr& msg) {
+        if (saving) return;
+        try {
+                rgb_ready = false;
+                current_rgb = cv_bridge::toCvCopy(msg, "bgr8")->image;
+                rgb_ready = true;
+        } catch (cv_bridge::Exception& e) {
+                ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+        }
+   }
+
+   void
+   depth_cb(const sensor_msgs::ImageConstPtr& msg) {
+        if (saving) return;
+        try {
+                depth_ready = false;
+                current_depth = cv_bridge::toCvCopy(msg, "32FC1")->image;
+                depth_ready = true;
+        } catch (cv_bridge::Exception& e) {
+                ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+        }
+   }
+ */
+
+void
+pose_cb(const geometry_msgs::Pose& pose) {
+
+        lar_tools::create_eigen_4x4(pose,T_BASE_ROBOT);
+
+
+        T_0_ROBOT = T_0_BASE * T_BASE_ROBOT;
+        T_0_CAMERA = T_0_ROBOT * T_ROBOT_CAMERA;
+
+        //  std::cout << T_BASE_ROBOT<<"\n#########\n"<<T_0_CAMERA<<"\n\n\n\n"<<std::endl;
+        //std::cout << pose <<std::endl;
+
+}
+int save_counter = 0;
+
+void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
+                           void* viewer_void) {
+        //    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer = *static_cast<boost::shared_ptr<pcl::visualization::PCLVisualizer> *> (viewer_void);
+        if (event.getKeySym() == "v" && event.keyDown()) {
+                if (cloud->points.size() > 1000) {
+                        //(*cloud_full) += (*cloud_trans);
+                        //            //
+                        data_to_consume = 1;
+                        //        }
+                }
+        }
+}
+
+void consumeData(){
+        std::string save_folder = "/home/daniele/temp/temp_clouds";
+        while(nh->ok()) {
+
+                if(data_to_consume>0) {
+                        cloud_consuming = true;
+                        if(cloud->points.size()>0 ) {
+
+                                /*
+                                    std::ofstream myfile;
+                                    std::stringstream ss;
+
+                                    ss.str("");
+                                    ss << save_folder << "/" << save_counter << ".pcd";
+                                    pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud);
+
+                                    ss.str("");
+                                    ss << save_folder << "/" << save_counter << "_noise.pcd";
+                                    pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud_noise);
+
+                                    ss.str("");
+                                    ss << save_folder << "/" << save_counter << "_robot.txt";
+                                    myfile.open(ss.str().c_str());
+                                    myfile << T_0_ROBOT;
+                                    myfile.close();
+
+                                    ss.str("");
+                                    ss << save_folder << "/" << save_counter << "_ee.txt";
+                                    myfile.open(ss.str().c_str());
+                                    myfile << T_ROBOT_CAMERA;
+                                    myfile.close();
+
+                                    ss.str("");
+                                    ss << save_folder << "/" << save_counter << ".txt";
+                                    myfile.open(ss.str().c_str());
+                                    myfile << T_0_CAMERA;
+                                    myfile.close();
+
+                                 */
+
+                                 (*cloud_full_filtered)+=(*cloud_trans);
+                                 // Create the filtering object
+                                 pcl::VoxelGrid<PointType> sor;
+                                 sor.setInputCloud (cloud_full_filtered);
+                                 sor.setLeafSize (0.01f, 0.01f, 0.01f);
+                                 sor.filter (*cloud_full_filtered);
+
+                                std::cout << "Saving shot: "<<save_counter<<std::endl;
+                                save_counter++;
+
+                                data_to_consume--;
+                        }
+                        cloud_consuming = false;
+                }
+                boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+        }
+
+}
+
+/** MAIN NODE **/
+int
+main(int argc, char** argv) {
+
+        // Initialize ROS
+        ros::init(argc, argv, "comau_manual_photographer");
+        ROS_INFO("comau_manual_photographer node started...");
+        nh = new ros::NodeHandle();
+
+/*
+        dynamic_reconfigure::Server<trimod_gripper::LwrManualPhotographerConfig> srv;
+        dynamic_reconfigure::Server<trimod_gripper::LwrManualPhotographerConfig>::CallbackType f;
+        f = boost::bind(&callback, _1, _2);
+        srv.setCallback(f);
+ */
+
+        /** VIEWER */
+        viewer = new pcl::visualization::PCLVisualizer("viewer");
+        viewer->registerKeyboardCallback(keyboardEventOccurred, (void*) &viewer);
+
+        /** TRANSFORMS */
+        lar_tools::create_eigen_4x4(0, 0, 0, 0,0, 0, T_0_BASE);
+        Eigen::Matrix4f correction;
+        lar_tools::create_eigen_4x4(0, 0, 0, 0,0, M_PI, correction);
+        lar_tools::create_eigen_4x4(
+            //  0.065f+0.003f,-0.025f,-0.095f-0.07f,0, M_PI, M_PI/2.0f,
+            //    T_ROBOT_CAMERA);
+
+                0.061,
+                -0.05,//-0.0094,
+                -0.1488,
+                179.0 * M_PI/180.0f,
+                0,
+                -89.5 * M_PI/180.0f,
+                T_ROBOT_CAMERA);
+                T_ROBOT_CAMERA=T_ROBOT_CAMERA*correction;
+        //        std::stringstream ss;
+        //        ss << "/home/daniele/temp/" << ros::Time::now();
+        //        save_folder = ss.str();
+        //
+        //        T <<
+        //        1, 0, 0, 0,
+        //        0, 1, 0, 0,
+        //        0, 0, 1, 0,
+        //        0, 0, 0, 1;
+
+
+        //        transformMatrixT(0, 0, 2.0f, 0, M_PI, 0, Robot_Base);
+        //        rotationMatrixT(0, 0, -M_PI / 2, EE);
+        //        transformMatrixT(0, 0, 1.0f, 0, 0, 0, Target);
+
+
+        //        boost::filesystem::create_directory(save_folder);
+
+        sub_cloud = nh->subscribe("/camera/depth_registered/points", 1, cloud_cb);
+        sub_pose = nh->subscribe("/lar_comau/comau_full_state_publisher", 1, pose_cb);
+
+        //image_transport::ImageTransport it(*nh);
+        //sub_rgb = it.subscribe("/xtion/xtion/rgb/image_raw", 1, rgb_cb);
+        //sub_depth = it.subscribe("/xtion/xtion/depth/image_raw", 1, depth_cb);
+
+        // Spin
+        boost::thread collectorThread(consumeData);
+
+        // Spin
+        while (nh->ok() && !viewer->wasStopped()) {
+
+                viewer->spinOnce();
+                ros::spinOnce();
+        }
+
+        collectorThread.join();
+
+}

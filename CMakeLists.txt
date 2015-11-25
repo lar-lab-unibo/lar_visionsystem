@@ -42,6 +42,15 @@ endif(OPENCV_FOUND)
 #Aruco
 set(ARUCO_LIBS /usr/local/lib/libaruco.so)
 
+
+MESSAGE("#### LAR TOOLS #####")
+find_package(lar_tools)
+include_directories(${lar_tools_INCLUDE_DIRS})
+
+MESSAGE("#### LAR VISION #####")
+find_package(lar_vision)
+include_directories(${lar_vision_INCLUDE_DIRS})
+
 #VisionSystemLegacy
 #set(VISION_SYSTEM_LIBS /usr/local/lib/libVisionSystemLegacy.so)
 
@@ -159,3 +168,8 @@ add_dependencies(comau_tf_follower ${PROJECT_NAME}_generate_messages_cpp)
 add_executable(tester src/tester.cpp)
 target_link_libraries(tester ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_visionsystem_commons)
 add_dependencies(tester ${PROJECT_NAME}_generate_messages_cpp)
+
+# comau_manual_photographer
+add_executable(comau_manual_photographer src/comau_manual_photographer.cpp)
+target_link_libraries(comau_manual_photographer ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
+add_dependencies(comau_manual_photographer ${PROJECT_NAME}_generate_messages_cpp)

@@ -25,8 +25,8 @@ static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy
 
 //std::string camera_topic_name = "/usb_cam/image_raw";///camera/rgb/image_mono";
 //std::string camera_info_file_name = "/home/daniele/catkin_ws/src/lar_visionsystem/data/lifeCamera640x480.yml";
-//std::string camera_topic_name = "/camera/rgb/image_raw";
-std::string camera_topic_name = "/camera/ir/image";
+std::string camera_topic_name = "/camera/rgb/image_raw";
+//std::string camera_topic_name = "/camera/ir/image";
 
 std::string camera_info_file_name = "/home/daniele/work/workspace_ros/src/lar_visionsystem/data/calibrations/kinect.yml";
 
