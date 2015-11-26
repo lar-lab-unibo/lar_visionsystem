@@ -157,7 +157,7 @@ pose_cb(const geometry_msgs::Pose& pose) {
 
         T_0_ROBOT = T_0_BASE * T_BASE_ROBOT;
         T_0_CAMERA = T_0_ROBOT * T_ROBOT_CAMERA;
-
+        std::cout << T_0_CAMERA<<std::endl;
         //  std::cout << T_BASE_ROBOT<<"\n#########\n"<<T_0_CAMERA<<"\n\n\n\n"<<std::endl;
         //std::cout << pose <<std::endl;
 

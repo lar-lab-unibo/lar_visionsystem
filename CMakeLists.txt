@@ -173,3 +173,8 @@ add_dependencies(tester ${PROJECT_NAME}_generate_messages_cpp)
 add_executable(comau_manual_photographer src/comau_manual_photographer.cpp)
 target_link_libraries(comau_manual_photographer ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
 add_dependencies(comau_manual_photographer ${PROJECT_NAME}_generate_messages_cpp)
+
+# comau_live_tsdf
+add_executable(comau_live_tsdf src/comau_live_tsdf.cpp)
+target_link_libraries(comau_live_tsdf ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
+add_dependencies(comau_live_tsdf ${PROJECT_NAME}_generate_messages_cpp)
