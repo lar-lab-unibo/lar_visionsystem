@@ -147,6 +147,11 @@ add_executable(marker_detector_udp src/marker_detector_udp.cpp)
 target_link_libraries(marker_detector_udp ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} lar_visionsystem_commons)
 add_dependencies(marker_detector_udp ${PROJECT_NAME}_generate_messages_cpp)
 
+# 2D MARKER DETECTOR UDP
+add_executable(marker_detector_target src/marker_detector_target.cpp)
+target_link_libraries(marker_detector_target ${catkin_LIBRARIES} ${OpenCV_LIBS} ${ARUCO_LIBS} lar_visionsystem_commons)
+add_dependencies(marker_detector_target ${PROJECT_NAME}_generate_messages_cpp)
+
 
 # 2D TRACK GENERATOR
 add_executable(track_2d src/track_2d.cpp)

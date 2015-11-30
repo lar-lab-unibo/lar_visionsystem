@@ -7,6 +7,7 @@
 #include <image_transport/image_transport.h>
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
+#include "geometry_msgs/Pose.h"
 
 #include <tf/transform_broadcaster.h>
 
@@ -15,7 +16,9 @@
 
 #include "lar_visionsystem/MarkerApproachCommand.h"
 #include "std_msgs/Int32MultiArray.h"
-#include "std_msgs/Float64MultiArray"
+
+#include "lar_tool_utils/UDPNode.h"
+
 
 static const char* DEFAULT_VIDEO_NODE_PARAMETERS_FILE = "/opt/visionSystemLegacy/data/kinect_parameters.txt";
 
@@ -38,8 +41,12 @@ tf::TransformBroadcaster* br;
  */
 aruco::CameraParameters camera_parameters;
 aruco::MarkerDetector marker_detector;
-float marker_size = 0.1f;
+double marker_size = 0.1f;
+double offx = 0.0;
+double offy = 0.0;
+double offz = 0.0;
 int marker_id =  800;
+std::string camera_frame = "comau_t_6_camera";
 
 vector<aruco::Marker> markers_list;
 vector<aruco::Marker> filtered_markers_list;
@@ -120,76 +127,72 @@ int main(int argc, char **argv)
         std::cout << "Reading from: "<<camera_info_file_name<<std::endl;
         camera_parameters.readFromXMLFile(camera_info_file_name);
         ros::init(argc, argv, "marker_detector_target");
-        nh = new ros::NodeHandle();
+        nh = new ros::NodeHandle("~");
 
         /* PARAMS */
-        nh.param<double>("marker_size", marker_size, 0.1f);
-        nh.param<int>("marker_id", marker_id, 800);
+        nh->param<double>("marker_size", marker_size, 0.1f);
+        nh->param<double>("offx",offx, 0.0f);
+        nh->param<double>("offy",offy, 0.0f);
+        nh->param<double>("offz",offz, 0.0f);
+        nh->param<int>("marker_id", marker_id, 800);
+        nh->param<std::string>("camera_frame",camera_frame,"comau_t_6_camera");
 
+        /* OFFSET */
+        Eigen::Matrix4d T_MARKER_OFFSET  =Eigen::Matrix4d::Identity();
+        T_MARKER_OFFSET(0,3) = offx;
+        T_MARKER_OFFSET(1,3) = offy;
+        T_MARKER_OFFSET(2,3) = offz;
+        geometry_msgs::Pose marker_pose;
 
-        std::cout << "marker_detector_target created!" <<std::endl;
+        ROS_INFO("Marker detector single target run!");
+
 
         image_transport::ImageTransport it(*nh);
         image_transport::Subscriber sub = it.subscribe(camera_topic_name.c_str(), 1, imageCallback);
         image_transport::Publisher image_publisher = it.advertise("lar_visionsystem/marker_detector_feedback", 1);
-        ros::Publisher marker_target_publisher = it.advertise<lar_comau::ComauState>("lar_visionsystem/marker_detector_single_target", 1);
-
+        std::string marker_full_name = "lar_marker_"+boost::lexical_cast<std::string>(marker_id);
+        ros::Publisher cartesian_publisher = nh->advertise<geometry_msgs::Pose>("lar_visionsystem/"+marker_full_name, 1);
 
         br = new tf::TransformBroadcaster();
-
-        //nh->setParam("/marker_detector/lowPassAlpha", 0.1);
-
-        //ros::spin();
-
-
 
         cv::namedWindow("view");
         cv::startWindowThread();
 
-        std_msgs::Int32MultiArray marker_list;
-        std_msgs::Float64MultiArray marker_array:
 
         while(nh->ok()) {
+
+                ROS_INFO("Searching for Marker: %d with size %f m!",marker_id,marker_size);
 
                 std::map<int, tf::Transform>::iterator iter;
 
                 std::stringstream ss;
                 std::stringstream ss2;
-                marker_list.data.clear();
-                marker_array.data.clear();
-                
-                marker_array.data.clear();
-                for (iter = filtered_markers_tf.begin(); iter != filtered_markers_tf.end(); iter++) {
 
-                        marker_list.data.push_back(iter->first);
+                for (iter = filtered_markers_tf.begin(); iter != filtered_markers_tf.end(); iter++) {
 
                         ss.str("");
                         ss << "lar_marker_"<<iter->first;
                         //std::cout << ss.str()<<std::endl;
 
                         if(iter->first==marker_id) {
-
+                          ROS_INFO("FOUND!");
+                          tf::Transform t_marker = iter->second;
+                          tf::Transform t_marker_offset;
+                          Eigen::Matrix4d T_MARKER;
+                          lar_tools::eigen_4x4_d_to_tf(T_MARKER,t_marker,true);
+                          T_MARKER = T_MARKER * T_MARKER_OFFSET;
+                          lar_tools::eigen_4x4_d_to_tf(T_MARKER,t_marker_offset);
+                          br->sendTransform(tf::StampedTransform(t_marker_offset, ros::Time::now(),  camera_frame,marker_full_name));
+                          lar_tools::geometrypose_to_tf(marker_pose,  t_marker_offset,true);
+                          cartesian_publisher.publish(marker_pose);
                         }
 
                 }
 
-                /*std::map<int, tf::Transform>::iterator iter_approach;
-                   for (iter_approach = approach_markers_tf.begin(); iter_approach != approach_markers_tf.end(); iter_approach++) {
 
-                        ss.str("");
-                        ss2.str("");
-                        ss << "lar_marker_"<<iter_approach->first;
-                        ss2 << "lar_marker_approach_"<<iter_approach->first;
-
-                        //std::cout << ss.str()<<std::endl;
-
-                        br->sendTransform(tf::StampedTransform(iter_approach->second, ros::Time(0),  ss.str().c_str(),ss2.str().c_str()));
-                        break;
-                   }*/
 
                 sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", current_image).toImageMsg();
                 image_publisher.publish(msg);
-                marker_list_publisher.publish(marker_list);
 
                 ros::spinOnce();
                 std::system("clear");
@@ -198,4 +201,4 @@ int main(int argc, char **argv)
         cv::destroyWindow("view");
 
         return 0;
-} // end main()
+}
