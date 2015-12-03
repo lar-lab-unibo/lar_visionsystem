@@ -40,6 +40,7 @@
 #include "lar_vision/commons/Noiser.h"
 #include "tsdf/tsdf_volume_octree.h"
 #include "tsdf/marching_cubes_tsdf_octree.h"
+#include "segmentation/HighMap.h"
 
 //boost
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -57,7 +58,23 @@ pcl::visualization::PCLVisualizer* viewer;
 pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_corrected(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans(new pcl::PointCloud<PointType>);
+pcl::PointCloud<NormalType>::Ptr cloud_trans_normals(new pcl::PointCloud<NormalType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans_purged(new pcl::PointCloud<PointType>);
+
+//VIEWER
+bool show_normals = false;
+
+//SEGMENTATION
+pcl::PointCloud<PointType>::Ptr planes(new pcl::PointCloud<PointType>());
+pcl::PointCloud<PointType>::Ptr clusters(new pcl::PointCloud<PointType>());
+double segmentation_plane_slice = 0.01f;
+double segmentation_plane_startz = -0.0f;
+double segmentation_plane_height= 2.00;
+int segmentation_plane_min_inliers= 50;
+double segmentation_plane_angle_th= 10.0;
+int segmentation_plane_speedup = 1;
+
+double highest_plane_z = -100.0f;
 
 std::string save_folder;
 Noiser noiser;
@@ -185,7 +202,9 @@ void current_pose_correction(){
         }
 }
 
-
+/**
+ * Saves current TSDF to disk
+ */
 void save_current_tsdf(){
         MarchingCubesTSDFOctree mc;
         mc.setMinWeight (min_weight);
@@ -237,7 +256,7 @@ void simple_cloud_from_tsdf_update(){
                 tsdf_nodes_out[i]->getData(d,w);
                 //min_w = w < min_w ? w : min_w;
                 //max_w = w > max_w ? w : max_w;
-                if(w<min_weight)continue;
+                if(w<min_weight) continue;
                 PointType pt;
                 pt.x = x;
                 pt.y = y;
@@ -289,6 +308,35 @@ void integrate_current_cloud(){
         ROS_INFO("Integrated cloud %d",consumed_data);
 }
 
+
+void plane_segmentation(){
+        //Segmentation
+        planes->points.clear();
+        clusters->points.clear();
+
+        std::vector<int> filtered_indices;
+        std::vector<int> planes_indices;
+
+
+        HighMap map(
+          segmentation_plane_height,
+          segmentation_plane_slice,
+          -segmentation_plane_startz,
+          segmentation_plane_speedup
+        );
+        map.planesCheck(
+                cloud_trans,
+                cloud_trans_normals,
+                filtered_indices,
+                planes_indices,
+                segmentation_plane_angle_th,
+                segmentation_plane_min_inliers
+                );
+        pcl::copyPointCloud(*cloud_trans, filtered_indices, *clusters);
+        pcl::copyPointCloud(*cloud_trans, planes_indices, *planes);
+        highest_plane_z = map.highest_plane_z;
+}
+
 /**
  * Cloud Received
  */
@@ -300,16 +348,8 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
 
 
-        if(bilateral) {
-                pcl::FastBilateralFilter<PointType> bif;
-                bif.setSigmaS(bilateral_sd);
-                bif.setSigmaR(bilateral_sr);
-                bif.setInputCloud(cloud);
-                bif.applyFilter(*cloud);
-        }
-
-
-
+        lar_vision::compute_normals(cloud_trans,cloud_trans_normals);
+        plane_segmentation();
 
         if(data_to_consume>0) {
                 integrate_current_cloud();
@@ -323,10 +363,17 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
 
         /** VISUALIZATION */
         viewer->removeAllPointClouds();
+        viewer->removeAllShapes();
 
         if(show_raw_data) {
                 viewer->addPointCloud(cloud_trans, "view");
-                //lar_vision::display_cloud(*viewer, cloud_corrected, 255,0,0, 5, "corrected");
+
+                
+
+                if(show_normals){
+                  viewer->addPointCloudNormals<PointType,NormalType>(cloud_trans,cloud_trans_normals);
+                }
+                lar_vision::display_cloud(*viewer, planes, 0,255,0, 1, "planes");
 
         }
 
@@ -445,7 +492,6 @@ main(int argc, char** argv) {
         nh->param<double>("min_weight",min_weight,0);
         nh->param<int>("crop_width", crop_width, width_);
         nh->param<int>("crop_height", crop_height, height_);
-
         nh->param<double>("fx", focal_length_x_, 525.);
         nh->param<double>("fy", focal_length_y_, 525.);
         nh->param<double>("cx", principal_point_x_, 319.5);
@@ -457,8 +503,15 @@ main(int argc, char** argv) {
         nh->param<double>("offy", offy, 0.0);
         nh->param<double>("offz", offz, 0.0);
         nh->param<int>("standing_frames",auto_integrate_stading_frames_th,5);
+        nh->param<bool>("auto_integrate",auto_integrate_if_robot_is_standing,false);
 
-
+        //Segmentation parameters
+        nh->param<double>("segmentation_plane_slice", segmentation_plane_slice, 0.01);
+        nh->param<double>("segmentation_plane_startz", segmentation_plane_startz, 0.00);
+        nh->param<double>("segmentation_plane_height", segmentation_plane_height, 2.00);
+        nh->param<int>("segmentation_plane_min_inliers", segmentation_plane_min_inliers, 50);
+        nh->param<double>("segmentation_plane_angle_th", segmentation_plane_angle_th, 10.0);
+        nh->param<int>("segmentation_plane_speedup", segmentation_plane_speedup, 1);
 
         //Compute TSDF Resolution
         int desired_res = tsdf_size / cell_size;
