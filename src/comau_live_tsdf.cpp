@@ -29,6 +29,9 @@
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/fast_bilateral.h>
 #include <pcl/registration/icp.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
+#include <pcl/io/vtk_lib_io.h>
 
 //CUSTOM NODES
 
@@ -52,7 +55,6 @@ ros::NodeHandle* nh;
 //CLOUDS & VIEWER
 pcl::visualization::PCLVisualizer* viewer;
 pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
-pcl::PointCloud<PointType>::Ptr cloud_reduced(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_corrected(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans_purged(new pcl::PointCloud<PointType>);
@@ -72,8 +74,8 @@ TSDFVolumeOctree::Ptr tsdf;
 
 int width_ = 640;
 int height_ = 480;
-int w = 100;
-int h = 100;
+int crop_width = width_;
+int crop_height = height_;
 double focal_length_x_ = 525.;
 double focal_length_y_ = 525.;
 double principal_point_x_ = 319.5;
@@ -100,6 +102,11 @@ double camera_error_roll = 0;
 double camera_error_pitch = 0;
 double camera_error_yaw = 0;
 
+/** ROBOT */
+double robot_velocity = 0.0;
+double robot_velocity_th = 0.00005;
+int robot_standing_frames = 0;
+
 /** INTEGRATING OPTIONS */
 int slots = 30;
 int data_to_consume = 0;
@@ -107,10 +114,15 @@ int consumed_data = 0;
 double offx = 0;
 double offy = 0;
 double offz = 0;
+int auto_integrate_stading_frames_th = 30;
+bool auto_integrate_if_robot_is_standing = true;
+std::string out_dir;
+std::string output_name="live";
 
 /** NODES */
 ros::Subscriber sub_cloud;
 ros::Subscriber sub_pose;
+ros::Subscriber sub_joints_state;
 image_transport::Subscriber sub_rgb;
 image_transport::Subscriber sub_depth;
 
@@ -165,29 +177,67 @@ void current_pose_correction(){
                 icp.align(*cloud_corrected);
                 Eigen::Matrix4f temp = icp.getFinalTransformation ();
                 for(int i = 0; i<4; i++)
-                  for(int j = 0; j<4; j++)
-                      T_CURRENTPOSE_REALPOSE(i,j)=temp(i,j);
+                        for(int j = 0; j<4; j++)
+                                T_CURRENTPOSE_REALPOSE(i,j)=temp(i,j);
 
                 std::cout << "has converged?" << icp.hasConverged() << " score:\n ";
                 ROS_INFO("cloud in: %d ; cloud out: %d",(int)cloud_trans->points.size(),(int)cloud_trans_purged->points.size());
         }
 }
 
+
+void save_current_tsdf(){
+        MarchingCubesTSDFOctree mc;
+        mc.setMinWeight (min_weight);
+        mc.setInputTSDF (tsdf);
+        mc.setColorByRGB (true);
+
+        pcl::PolygonMesh::Ptr mesh (new pcl::PolygonMesh);
+        mc.reconstruct (*mesh);
+        pcl::PointCloud<PointType>::Ptr cloud_out(new pcl::PointCloud<PointType>);
+        pcl::fromPCLPointCloud2(mesh->cloud, *cloud_out);
+        pcl::transformPointCloud(*cloud_out,*cloud_out,first_T_0_CAMERA);
+
+        std::string pcd_out_filename = out_dir + "/" +output_name+"_tsdf.pcd";
+        std::string pcd_simple_out_filename = out_dir + "/" +output_name+"_tsdf_simple.pcd";
+        std::string ply_out_filename = out_dir + "/" +output_name+"_tsdf_mesh.ply";
+
+        ROS_INFO("Writing PCD: %s",pcd_out_filename.c_str());
+        ROS_INFO("Writing PCD Simple: %s",pcd_simple_out_filename.c_str());
+        ROS_INFO("Writing PLY: %s",ply_out_filename.c_str());
+
+        pcl::io::savePCDFileBinary(pcd_out_filename, *cloud_out);
+        pcl::io::savePCDFileBinary(pcd_simple_out_filename, *tsdf_cloud);
+        pcl::io::savePLYFileBinary(ply_out_filename, *mesh);
+
+        if(false) {
+                std::string tsdf_out_filename = out_dir + "/" +output_name+"_tsdf.tsdf";
+                ROS_INFO("Writing TSDF: %s",tsdf_out_filename.c_str());
+                tsdf->save(tsdf_out_filename);
+        }
+
+}
+
 /**
  * Extract simple cloud representation from tsdf
  */
 void simple_cloud_from_tsdf_update(){
-  /*
+
         tsdf_nodes_out.clear();
         tsdf_cloud->points.clear();
         tsdf->nodeList(tsdf_nodes_out);
-        ROS_INFO("Tsdf nodes: %d",tsdf_nodes_out.size());
+        //ROS_INFO("Tsdf nodes: %d",tsdf_nodes_out.size());
         float x,y,z;
         float d,w;
         float color;
+        //double min_w = 10000000.0;
+        //double max_w = -10000000.0;
         for(int i = 0; i < tsdf_nodes_out.size(); i++) {
                 tsdf_nodes_out[i]->getCenter (x,y,z);
                 tsdf_nodes_out[i]->getData(d,w);
+                //min_w = w < min_w ? w : min_w;
+                //max_w = w > max_w ? w : max_w;
+                if(w<min_weight)continue;
                 PointType pt;
                 pt.x = x;
                 pt.y = y;
@@ -200,10 +250,11 @@ void simple_cloud_from_tsdf_update(){
                         tsdf_cloud->points.push_back(pt);
                 }
         }
+        //ROS_INFO("Min weight: %f, Max weight: %f",min_w,max_w);
         Eigen::Matrix4d t = first_T_0_CAMERA;
         pcl::transformPointCloud(*tsdf_cloud, *tsdf_cloud,t );
-      */
 
+/*
         MarchingCubesTSDFOctree mc;
         mc.setMinWeight (min_weight);
         mc.setInputTSDF (tsdf);
@@ -215,7 +266,7 @@ void simple_cloud_from_tsdf_update(){
         pcl::fromPCLPointCloud2(mesh->cloud, *tsdf_cloud);
         Eigen::Matrix4d t = first_T_0_CAMERA;
         pcl::transformPointCloud(*tsdf_cloud,*tsdf_cloud,t);
-
+ */
 }
 
 /**
@@ -233,7 +284,7 @@ void integrate_current_cloud(){
         if (cloud->height != height_ || cloud->width != width_)
                 PCL_ERROR ("Error: cloud %d has size %d x %d, but TSDF is initialized for %d x %d pointclouds\n", consumed_data, cloud->width, cloud->height, width_, height_);
 
-        tsdf->integrateCloud (*cloud_reduced, pcl::PointCloud<pcl::Normal> (),tsdf_affine_transform);
+        tsdf->integrateCloud (*cloud, pcl::PointCloud<pcl::Normal> (),tsdf_affine_transform);
         consumed_data++;
         ROS_INFO("Integrated cloud %d",consumed_data);
 }
@@ -246,20 +297,8 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         pcl::PCLPointCloud2 pcl_pc;
         pcl_conversions::toPCL(*input, pcl_pc);
         pcl::fromPCLPointCloud2(pcl_pc, *cloud);
+        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
 
-
-        cloud_reduced->points.clear();
-
-        int startx = (width_-h)/2.0f;
-        int starty = (height_-h)/2.0f;
-
-        for(int x = startx; x < startx+w; x++){
-            for(int y = starty; y < starty+h; y++){
-              int index = x + y*width_;
-              cloud_reduced->points.push_back(cloud->points[index]);
-          }
-        }
-        cloud = cloud_reduced;
 
         if(bilateral) {
                 pcl::FastBilateralFilter<PointType> bif;
@@ -270,14 +309,16 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         }
 
 
+
+
         if(data_to_consume>0) {
                 integrate_current_cloud();
                 data_to_consume--;
                 if(data_to_consume<=0) {
-                        simple_cloud_from_tsdf_update();
+                        if(consumed_data%10==0)
+                                simple_cloud_from_tsdf_update();
                 }
         }
-        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
 
 
         /** VISUALIZATION */
@@ -293,6 +334,7 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
 }
 
 
+
 /**
  * Robot Pose Received
  */
@@ -303,6 +345,32 @@ void pose_cb(const geometry_msgs::Pose& pose) {
         T_0_ROBOT = T_0_BASE * T_BASE_ROBOT;
         T_0_CAMERA = T_0_ROBOT * T_ROBOT_CAMERA;
         T_0_CAMERA = T_0_CAMERA * T_CURRENTPOSE_REALPOSE;
+}
+
+/**
+ * Robot Joints State received
+ */
+void jointStateReceived( const sensor_msgs::JointState& msg ){
+
+        robot_velocity = 0.0;
+        for(int i = 0; i < msg.velocity.size(); i++) {
+                robot_velocity+=  msg.velocity[i]* msg.velocity[i];
+        }
+        robot_velocity= sqrt(robot_velocity);
+        if(robot_velocity<=robot_velocity_th) {
+                robot_standing_frames++;
+                ROS_INFO("Robot is standing %d",robot_standing_frames);
+        }else{
+                robot_standing_frames=0;
+        }
+
+        if(auto_integrate_if_robot_is_standing) {
+                if(robot_standing_frames>=auto_integrate_stading_frames_th) {
+                        robot_standing_frames = 0;
+                        data_to_consume++;
+                }
+        }
+
 }
 
 
@@ -321,7 +389,7 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                 show_raw_data=!show_raw_data;
         }
         if (event.getKeySym() == "a" && event.keyDown()) {
-                current_pose_correction();
+                save_current_tsdf();
         }
         if (event.getKeySym() == "j" && event.keyDown()) {
                 lar_tools::create_eigen_4x4_d(0,0,0, 0,0, 0, T_CURRENTPOSE_REALPOSE);
@@ -352,7 +420,7 @@ main(int argc, char** argv) {
         /** PARAMETERS */
         //nh->param<std::string>("folder", path, "~/temp/temp_clouds/");
         //nh->param<std::string>("output_name", output_name,"merge_results");
-        //nh->param<std::string>("out_folder", out_dir,"~/temp/");
+        nh->param<std::string>("out_folder", out_dir,"/home/daniele/temp/");
 
         //Camera paratemetrs
         nh->param<bool>("simple_merge", do_simple_merge, false);
@@ -366,14 +434,17 @@ main(int argc, char** argv) {
 
 
         //TSDF Paremeters
-        nh->param<int>("width", w, 640);
-        nh->param<int>("height", h, 480);
+        nh->param<int>("width", width_, 640);
+        nh->param<int>("height", height_, 480);
         nh->param<double>("tsdf_size", tsdf_size, 1.0);
         nh->param<double>("cell_size", cell_size, 0.01);
         nh->param<double>("trunc_dist_pos", trunc_dist_pos, 0.03);
         nh->param<double>("trunc_dist_neg", trunc_dist_neg, 0.03);
         nh->param<double>("max_sensor_dist", max_sensor_dist, 3.0);
         nh->param<double>("min_sensor_dist", min_sensor_dist, 0.0);
+        nh->param<double>("min_weight",min_weight,0);
+        nh->param<int>("crop_width", crop_width, width_);
+        nh->param<int>("crop_height", crop_height, height_);
 
         nh->param<double>("fx", focal_length_x_, 525.);
         nh->param<double>("fy", focal_length_y_, 525.);
@@ -385,6 +456,8 @@ main(int argc, char** argv) {
         nh->param<double>("offx", offx, 0.0);
         nh->param<double>("offy", offy, 0.0);
         nh->param<double>("offz", offz, 0.0);
+        nh->param<int>("standing_frames",auto_integrate_stading_frames_th,5);
+
 
 
         //Compute TSDF Resolution
@@ -428,6 +501,7 @@ main(int argc, char** argv) {
         tsdf->setSensorDistanceBounds (min_sensor_dist, max_sensor_dist);
         tsdf->setIntegrateColor (integrate_color);
         tsdf->setDepthTruncationLimits (trunc_dist_pos, trunc_dist_neg);
+        tsdf->setImageCropSize(crop_width,crop_height);
         Eigen::Affine3d tsdf_global_transform;
         tsdf_global_transform = T_WORLD_0;
         //tsdf->setGlobalTransform(tsdf_global_transform);
@@ -437,7 +511,7 @@ main(int argc, char** argv) {
         /** NOSES */
         sub_cloud = nh->subscribe("/camera/depth_registered/points", 1, cloud_cb);
         sub_pose = nh->subscribe("/lar_comau/comau_full_state_publisher", 1, pose_cb);
-
+        sub_joints_state = nh->subscribe( "/lar_comau/comau_joint_states",1,jointStateReceived );
 
         /** THREADS */
         boost::thread collectorThread(consumeData);
