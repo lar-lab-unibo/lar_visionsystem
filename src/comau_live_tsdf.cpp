@@ -351,6 +351,12 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         lar_vision::compute_normals(cloud_trans,cloud_trans_normals);
         plane_segmentation();
 
+        pcl::PassThrough<PointType> pass;
+        pass.setInputCloud (cloud_trans);
+        pass.setFilterFieldName ("z");
+        pass.setFilterLimits (highest_plane_z, 3000.0);
+        pass.filter (*cloud_trans);
+
         if(data_to_consume>0) {
                 integrate_current_cloud();
                 data_to_consume--;
@@ -368,7 +374,7 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         if(show_raw_data) {
                 viewer->addPointCloud(cloud_trans, "view");
 
-                
+
 
                 if(show_normals){
                   viewer->addPointCloudNormals<PointType,NormalType>(cloud_trans,cloud_trans_normals);
