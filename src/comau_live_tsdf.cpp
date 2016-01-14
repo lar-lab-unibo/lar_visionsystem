@@ -114,6 +114,7 @@ double grasp_max_radius = 0.05;
 double grasp_fritction_cone_angle = 1.57;
 double grasp_max_curvature = 1.57;
 double grasp_approach_angle_offset = 0.707;
+int grasp_type = CRABBY_GRIPPER_STATUS_DUAL;
 pcl::PointCloud<PointType>::Ptr target_object(new pcl::PointCloud<PointType>());
 pcl::PointCloud<PointType>::Ptr target_object_approach_slice(new pcl::PointCloud<PointType>());
 pcl::PointCloud<PointType>::Ptr target_grasp_configuration_cloud(new pcl::PointCloud<PointType>());
@@ -371,6 +372,64 @@ void integrate_current_cloud(){
 }
 
 /**
+ * Approach RF Refinement by means of CRASP TYPE
+ */
+void compute_approach_rf_refinement(){
+        if(grasp_type==CRABBY_GRIPPER_STATUS_PARALLEL) {
+                Eigen::Matrix4d roty,rotz,wrist_offset;
+                lar_tools::rotation_matrix_4x4_d('y',-M_PI/2.0,roty);
+                lar_tools::rotation_matrix_4x4_d('z',M_PI/2.0,rotz);
+                lar_tools::create_eigen_4x4_d(0.025,0.0,0.07+0.095,0,0,0,wrist_offset);
+                target_object_approach_rf = target_object_approach_rf*roty;
+
+                target_object_approach_rf_wrist = target_object_approach_rf*wrist_offset;
+
+                Eigen::Matrix4d approach_offset;
+                lar_tools::create_eigen_4x4_d(apporach_offset_distance,0,apporach_offset_distance,0,0,0,approach_offset);
+                target_object_approach_rf_wrist_waypoint = target_object_approach_rf_wrist*approach_offset;
+
+                std::cout << "WRIST"<<std::endl;
+                std::cout << target_object_approach_rf_wrist<<std::endl;
+                std::cout << "OFFSET"<<std::endl;
+                std::cout << approach_offset<<std::endl;
+                std::cout << "WRIST WAY"<<std::endl;
+                std::cout << target_object_approach_rf_wrist_waypoint<<std::endl;
+
+        }else if(grasp_type==CRABBY_GRIPPER_STATUS_DUAL) {
+
+                Eigen::Matrix4d roty,rotz,wrist_offset;
+                lar_tools::rotation_matrix_4x4_d('z',M_PI/2.0,rotz);
+                lar_tools::create_eigen_4x4_d(0.025,0.0,0.07+0.095,0,0,0,wrist_offset);
+                target_object_approach_rf = target_object_approach_rf*rotz;
+                target_object_approach_rf_wrist = target_object_approach_rf*wrist_offset;
+                Eigen::Matrix4d approach_offset;
+                lar_tools::create_eigen_4x4_d(0,0,apporach_offset_distance,0,0,0,approach_offset);
+                target_object_approach_rf_wrist_waypoint = target_object_approach_rf_wrist*approach_offset;
+
+        }
+}
+
+/**
+ * Check Approach RF Consistency
+ */
+bool check_approach_rf_consistency(){
+        if(grasp_type==CRABBY_GRIPPER_STATUS_PARALLEL) {
+                Eigen::Vector3f base_x;
+                base_x<< 1,0,0;
+                Eigen::Vector3f approach_dir;
+                approach_dir<<
+                -target_object_approach_rf(0,2),
+                -target_object_approach_rf(1,2),
+                -target_object_approach_rf(2,2);
+
+                double approach_angle_offset = acos(approach_dir.dot(base_x));
+                return fabs(approach_angle_offset)<=grasp_approach_angle_offset;
+        }else if(grasp_type==CRABBY_GRIPPER_STATUS_DUAL) {
+                return true;
+        }
+}
+
+/**
  * //TODO: INCAPSULARE!!!!! CHE è STO SCHIFO??
  */
 void compute_target_object_approach(){
@@ -381,7 +440,7 @@ void compute_target_object_approach(){
         grasper.setCloud(target_object_approach_slice);
         display_cloud(*viewer, grasper.hull, 255, 0, 0, 15, "target_object_approach_hull");
 
-        CrabbyGripper gripper;
+        CrabbyGripper gripper(grasp_type);
         gripper.auto_discard_planar_invalids = true;
         gripper.min_offset = grasp_min_offset;
         gripper.max_offset = grasp_max_offset;
@@ -400,6 +459,9 @@ void compute_target_object_approach(){
                 gripper.find(grasper.points, grasp_indices,jumps);
                 if(grasp_indices.size()==0) break;
 
+                ROS_INFO("Grasp FOUND!");
+
+
                 double x,y,z,roll,pitch,yaw;
                 gripper.getApproachRF(grasper.points, grasp_indices,x,y,z,roll,pitch,yaw);
                 z = target_object_approach_slice->points[0].z;
@@ -407,33 +469,12 @@ void compute_target_object_approach(){
                 target_object_approach_rf_wrist = Eigen::Matrix4d::Identity();
                 target_object_approach_rf_wrist_waypoint = Eigen::Matrix4d::Identity();
                 lar_tools::create_eigen_4x4_d(x,y,z,roll,pitch,yaw,target_object_approach_rf);
-                Eigen::Matrix4d roty,rotz,wrist_offset;
-                lar_tools::rotation_matrix_4x4_d('y',-M_PI/2.0,roty);
-                lar_tools::rotation_matrix_4x4_d('z',M_PI/2.0,rotz);
-                lar_tools::create_eigen_4x4_d(0.025,0.0,0.07+0.095,0,0,0,wrist_offset);
-                target_object_approach_rf = target_object_approach_rf*roty;
 
 
-                target_object_approach_rf_wrist = target_object_approach_rf*wrist_offset;
-
-                Eigen::Matrix4d approach_offset;
-                lar_tools::create_eigen_4x4_d(apporach_offset_distance,0,apporach_offset_distance,0,0,0,approach_offset);
-                target_object_approach_rf_wrist_waypoint = target_object_approach_rf_wrist*approach_offset;
-                //target_object_approach_rf = target_object_approach_rf*rotz;
+                compute_approach_rf_refinement();
 
 
-
-                Eigen::Vector3f base_x;
-                base_x<< 1,0,0;
-                Eigen::Vector3f approach_dir;
-                approach_dir<<
-                -target_object_approach_rf(0,2),
-                -target_object_approach_rf(1,2),
-                -target_object_approach_rf(2,2);
-
-                double approach_angle_offset = acos(approach_dir.dot(base_x));
-
-                if(fabs(approach_angle_offset)>grasp_approach_angle_offset) {
+                if(!check_approach_rf_consistency()) {
                         jumps++;
                         continue;
                 }else{
@@ -862,6 +903,7 @@ main(int argc, char** argv) {
         nh->param<double>("grasp_fritction_cone_angle",grasp_fritction_cone_angle,M_PI/2.0);
         nh->param<double>("grasp_max_curvature",grasp_max_curvature,1);
         nh->param<double>("grasp_approach_angle_offset",grasp_approach_angle_offset,0.707);
+        nh->param<int>("grasp_type",grasp_type,CRABBY_GRIPPER_STATUS_PARALLEL);
 
 
 
