@@ -11,6 +11,7 @@
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 #include <kdl/frames_io.hpp>
 #include "geometry_msgs/Pose.h"
+#include <tf/transform_broadcaster.h>
 
 //OPENCV
 #include <opencv2/opencv.hpp>
@@ -36,11 +37,13 @@
 //CUSTOM NODES
 
 #include "lar_tools.h"
+#include "lar_tool_utils/UDPNode.h"
 #include "lar_vision/commons/lar_vision_commons.h"
 #include "lar_vision/commons/Noiser.h"
 #include "tsdf/tsdf_volume_octree.h"
 #include "tsdf/marching_cubes_tsdf_octree.h"
 #include "segmentation/HighMap.h"
+#include "segmentation/OnePointRansac.h"
 #include "grasping/Slicer.h"
 #include "grasping/grippers/CrabbyGripper.h"
 
@@ -48,11 +51,25 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/thread/thread.hpp>
 
+//COMMUNICATION DEFINES
+#define COMMAND_SEND_JOINTS 333
+#define COMMAND_SEND_CARTESIAN 777
+
 using namespace std;
 using namespace lar_vision;
 
+//COMMUNICATION
+struct MyUDPMessage {
+        int command;
+        long time;
+        float payload[32];
+};
+lar_tools::UDPNode* robot_node;
+MyUDPMessage send_message;
+
 //ROS
 ros::NodeHandle* nh;
+tf::TransformBroadcaster* tf_broadcaster;
 
 
 //CLOUDS & VIEWER
@@ -103,9 +120,11 @@ pcl::PointCloud<PointType>::Ptr target_grasp_configuration_cloud(new pcl::PointC
 Eigen::Matrix4d target_object_rf;
 Eigen::Matrix4d target_object_approach_rf;
 Eigen::Matrix4d target_object_approach_rf_wrist;
+Eigen::Matrix4d target_object_approach_rf_wrist_waypoint;
+bool target_object_approach_rf_wrist_ready = false;
 bool show_target_object_slices = false;
 std::vector<pcl::PointIndices> target_object_slice_indices;
-
+double apporach_offset_distance = 0.30;
 
 //TEST
 std::string save_folder;
@@ -143,6 +162,7 @@ bool cloud_noise = true;
 bool camera_noise = true;
 bool do_simple_merge = false;
 double leaf = 0.01f;
+bool use_marching_cube = true;
 
 double camera_error_x = 0;
 double camera_error_y = 0;
@@ -274,38 +294,53 @@ void save_current_tsdf(){
  */
 void simple_cloud_from_tsdf_update(){
 
-        tsdf_nodes_out.clear();
-        tsdf_cloud->points.clear();
-        tsdf->nodeList(tsdf_nodes_out);
-        //ROS_INFO("Tsdf nodes: %d",tsdf_nodes_out.size());
-        float x,y,z;
-        float d,w;
-        float color;
-        //double min_w = 10000000.0;
-        //double max_w = -10000000.0;
-        for(int i = 0; i < tsdf_nodes_out.size(); i++) {
-                tsdf_nodes_out[i]->getCenter (x,y,z);
-                tsdf_nodes_out[i]->getData(d,w);
-                //min_w = w < min_w ? w : min_w;
-                //max_w = w > max_w ? w : max_w;
-                if(w<min_weight) continue;
-                PointType pt;
-                pt.x = x;
-                pt.y = y;
-                pt.z = z;
-                pt.r = 0; pt.g = 0; pt.b = 0;
-                if(d<=0.0f && d>=-0.3f) {
-                        tsdf_nodes_out[i]->getRGB(
-                                pt.r,pt.g,pt.b
-                                );
-                        tsdf_cloud->points.push_back(pt);
+
+
+        if(use_marching_cube) {
+
+                MarchingCubesTSDFOctree mc;
+                mc.setMinWeight (min_weight);
+                mc.setInputTSDF (tsdf);
+                mc.setColorByRGB (true);
+
+                pcl::PolygonMesh::Ptr mesh (new pcl::PolygonMesh);
+                mc.reconstruct (*mesh);
+                pcl::PointCloud<PointType>::Ptr cloud_out(new pcl::PointCloud<PointType>);
+                pcl::fromPCLPointCloud2(mesh->cloud, *tsdf_cloud);
+                pcl::transformPointCloud(*tsdf_cloud,*tsdf_cloud,first_T_0_CAMERA);
+        }else{
+                tsdf_nodes_out.clear();
+                tsdf_cloud->points.clear();
+                tsdf->nodeList(tsdf_nodes_out);
+                //ROS_INFO("Tsdf nodes: %d",tsdf_nodes_out.size());
+                float x,y,z;
+                float d,w;
+                float color;
+                //double min_w = 10000000.0;
+                //double max_w = -10000000.0;
+                for(int i = 0; i < tsdf_nodes_out.size(); i++) {
+                        tsdf_nodes_out[i]->getCenter (x,y,z);
+                        tsdf_nodes_out[i]->getData(d,w);
+                        //min_w = w < min_w ? w : min_w;
+                        //max_w = w > max_w ? w : max_w;
+                        if(w<min_weight) continue;
+                        PointType pt;
+                        pt.x = x;
+                        pt.y = y;
+                        pt.z = z;
+                        pt.r = 0; pt.g = 0; pt.b = 0;
+                        if(d<=0.0f && d>=-0.3f) {
+                                tsdf_nodes_out[i]->getRGB(
+                                        pt.r,pt.g,pt.b
+                                        );
+                                tsdf_cloud->points.push_back(pt);
+                        }
                 }
+                Eigen::Matrix4d t = first_T_0_CAMERA;
+                pcl::transformPointCloud(*tsdf_cloud, *tsdf_cloud,t );
         }
-        Eigen::Matrix4d t = first_T_0_CAMERA;
 
 
-
-        pcl::transformPointCloud(*tsdf_cloud, *tsdf_cloud,t );
 
         //Highets plane segmentation
         if(segmentation_plane_success) {
@@ -339,7 +374,7 @@ void integrate_current_cloud(){
  * //TODO: INCAPSULARE!!!!! CHE è STO SCHIFO??
  */
 void compute_target_object_approach(){
-        ROS_INFO("Computing Target Approach: %d",target_object_approach_slice->points.size());
+        ROS_INFO("Computing Target Approach: %d",(int)(target_object_approach_slice->points.size()));
         if(target_object_approach_slice->points.size()<=0) return;
 
         Grasper grasper(grasp_hull_alpha, grasp_hull_delta);
@@ -358,7 +393,7 @@ void compute_target_object_approach(){
         std::vector<int> grasp_indices;
         int jumps = 0;
         bool found = false;
-
+        target_object_approach_rf_wrist_ready = false;
         Eigen::Matrix4d local_transform= Eigen::Matrix4d::Identity();
 
         while(!found) {
@@ -370,13 +405,20 @@ void compute_target_object_approach(){
                 z = target_object_approach_slice->points[0].z;
                 target_object_approach_rf = Eigen::Matrix4d::Identity();
                 target_object_approach_rf_wrist = Eigen::Matrix4d::Identity();
+                target_object_approach_rf_wrist_waypoint = Eigen::Matrix4d::Identity();
                 lar_tools::create_eigen_4x4_d(x,y,z,roll,pitch,yaw,target_object_approach_rf);
                 Eigen::Matrix4d roty,rotz,wrist_offset;
                 lar_tools::rotation_matrix_4x4_d('y',-M_PI/2.0,roty);
                 lar_tools::rotation_matrix_4x4_d('z',M_PI/2.0,rotz);
                 lar_tools::create_eigen_4x4_d(0.025,0.0,0.07+0.095,0,0,0,wrist_offset);
                 target_object_approach_rf = target_object_approach_rf*roty;
+
+
                 target_object_approach_rf_wrist = target_object_approach_rf*wrist_offset;
+
+                Eigen::Matrix4d approach_offset;
+                lar_tools::create_eigen_4x4_d(apporach_offset_distance,0,apporach_offset_distance,0,0,0,approach_offset);
+                target_object_approach_rf_wrist_waypoint = target_object_approach_rf_wrist*approach_offset;
                 //target_object_approach_rf = target_object_approach_rf*rotz;
 
 
@@ -396,9 +438,20 @@ void compute_target_object_approach(){
                         continue;
                 }else{
                         found = true;
+                        target_object_approach_rf_wrist_ready = true;
                         double sx,sy,sz,sroll,spitch,syaw;
                         lar_tools::eigen_4x4_to_xyzrpy_d(target_object_approach_rf_wrist,sx,sy,sz,sroll,spitch,syaw);
                         ROS_INFO("APPROACH WRIST POSITION %f,%f,%f    ,%f,%f,%f",sx,sy,sz,sroll,spitch,syaw);
+
+                        //TFs
+                        tf::Transform target_object_approach_rf_wrist_tf;
+                        tf::Transform target_object_approach_offset_rf_wrist_tf;
+                        lar_tools::eigen_4x4_d_to_tf(target_object_approach_rf_wrist,target_object_approach_rf_wrist_tf);
+                        lar_tools::eigen_4x4_d_to_tf(target_object_approach_rf_wrist_waypoint,target_object_approach_offset_rf_wrist_tf);
+
+                        tf_broadcaster->sendTransform(tf::StampedTransform(target_object_approach_rf_wrist_tf, ros::Time::now(), "base", "approach_position"));
+                        tf_broadcaster->sendTransform(tf::StampedTransform(target_object_approach_offset_rf_wrist_tf, ros::Time::now(), "base", "approach_position_waypoint"));
+
                 }
                 if (grasp_indices.size() > 0) {
                         target_grasp_configuration_cloud->points.clear();
@@ -412,6 +465,27 @@ void compute_target_object_approach(){
                         }
                         break;
                 }
+        }
+}
+
+/**
+ * Sends Over UDP Target Approach Waypoint
+ */
+void send_target_approach_to_robot(){
+        if(target_object_approach_rf_wrist_ready) {
+                double sx,sy,sz,sroll,spitch,syaw;
+                lar_tools::eigen_4x4_to_xyzrpy_d(target_object_approach_rf_wrist_waypoint,sx,sy,sz,sroll,spitch,syaw);
+                ROS_INFO("APPROACH WAYPOINT WRIST POSITION %f,%f,%f    ,%f,%f,%f",sx,sy,sz,sroll,spitch,syaw);
+
+                send_message.command = COMMAND_SEND_CARTESIAN;
+                send_message.time = -1;
+                send_message.payload[0] = sx*1000.0;
+                send_message.payload[1] = sy*1000.0;
+                send_message.payload[2] = sz*1000.0;
+                send_message.payload[3] = sroll*180.0/M_PI;
+                send_message.payload[4] = spitch*180.0/M_PI;
+                send_message.payload[5] = syaw*180.0/M_PI;
+                robot_node->send((void *)&send_message,sizeof(send_message));
         }
 }
 
@@ -477,6 +551,20 @@ void plane_segmentation(){
         std::vector<int> planes_indices;
 
 
+
+/*
+        OnePointRansac one(segmentation_plane_slice,0.99,1000,std::cos(segmentation_plane_angle_th*M_PI/180.0));
+
+        one.planesCheck(
+                cloud_seg,
+                cloud_seg_normals,
+                filtered_indices,
+                planes_indices,
+                segmentation_plane_angle_th,
+                segmentation_plane_min_inliers
+                );
+ */
+
         HighMap map(
                 segmentation_plane_height,
                 segmentation_plane_slice,
@@ -491,12 +579,19 @@ void plane_segmentation(){
                 segmentation_plane_angle_th,
                 segmentation_plane_min_inliers
                 );
+
+        //ROS_INFO("Segmentation MIN Z: %f",map.min_z);
+        //ROS_INFO("Segmentation MAX Z: %f",map.max_z);
+
         pcl::copyPointCloud(*cloud_trans, filtered_indices, *clusters);
         pcl::copyPointCloud(*cloud_trans, planes_indices, *planes);
+
         highest_plane_z = map.highest_plane_z + segmentation_plane_highest_th;
+        //ROS_INFO("Segmentation Highest Z: %f",highest_plane_z);
         segmentation_plane_pass_filter.setFilterFieldName ("z");
         segmentation_plane_pass_filter.setFilterLimits (highest_plane_z, 3000.0);
         segmentation_plane_success = planes->points.size()>10;
+
 }
 
 /**
@@ -633,6 +728,8 @@ void jointStateReceived( const sensor_msgs::JointState& msg ){
  */
 void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                            void* viewer_void) {
+
+        // ROS_INFO("Key Pressed code: %d",event.getKeyCode());
         //    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer = *static_cast<boost::shared_ptr<pcl::visualization::PCLVisualizer> *> (viewer_void);
         if (event.getKeySym() == "v" && event.keyDown()) {
                 if (cloud->points.size() > 1000) {
@@ -646,14 +743,31 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                 save_current_tsdf();
         }
         if (event.getKeySym() == "n" && event.keyDown()) {
-                show_tsdf_clusters = !show_tsdf_clusters;
+                //show_tsdf_clusters = !show_tsdf_clusters;
                 ROS_INFO("Show Clusters %s",show_tsdf_clusters ? "activated" : "deactivated");
+                show_normals = !show_normals;
         }
         if (event.getKeySym() == "m" && event.keyDown()) {
                 show_target_object_slices = !show_target_object_slices;
                 ROS_INFO("Show Target Object %s",show_target_object_slices ? "activated" : "deactivated");
         }
-
+        //Approach keys
+        if (event.getKeyCode() == 45 && event.keyDown()) {
+                apporach_offset_distance -= 0.01;
+                if(apporach_offset_distance<0.0) apporach_offset_distance=0.0;
+                ROS_INFO("Approach Offset %f",apporach_offset_distance);
+                compute_target_object_approach();
+                send_target_approach_to_robot();
+        }
+        if (event.getKeyCode() == 43 && event.keyDown()) {
+                apporach_offset_distance += 0.01;
+                ROS_INFO("Approach Offset %f",apporach_offset_distance);
+                compute_target_object_approach();
+                send_target_approach_to_robot();
+        }
+        if (event.getKeySym() == "o" && event.keyDown()) {
+                send_target_approach_to_robot();
+        }
 
 
 }
@@ -677,6 +791,13 @@ main(int argc, char** argv) {
         ros::init(argc, argv, "comau_live_tsdf");
         ROS_INFO("comau_manual_photographer node started...");
         nh = new ros::NodeHandle("~");
+        tf_broadcaster= new tf::TransformBroadcaster;
+
+        //COMMUNICATION
+        robot_node = new lar_tools::UDPNode("127.0.0.1",7750);
+        if(!robot_node->isReady() ) {
+                ROS_INFO("ROBOT NODE UDP ERROR!");
+        }
 
         /** PARAMETERS */
         //nh->param<std::string>("folder", path, "~/temp/temp_clouds/");
@@ -710,6 +831,7 @@ main(int argc, char** argv) {
         nh->param<double>("fy", focal_length_y_, 525.);
         nh->param<double>("cx", principal_point_x_, 319.5);
         nh->param<double>("cy", principal_point_y_, 239.5);
+        nh->param<bool>("use_marching_cube", use_marching_cube, true);
 
         //Acquisition parameters
         nh->param<int>("slots", slots, 30);

@@ -50,7 +50,7 @@ bool GLOBAL_CALIBRATION_ACTIVE = true; // TRUE IF CALIBRATION LOOP IS ACTIVE
 
 /** Gripper Control */
 bool gripper_status = false;
-std::string gripper_usb_name = "/dev/ttyUSB0";
+std::string gripper_usb_name = "/dev/ttyUSB";
 int gripper_serial = 0;
 struct termios gripper_serial_cfg;
 float gripper_closure_angle = 140;
@@ -93,13 +93,24 @@ main (int argc, char** argv)
         //ros::Subscriber joy_sub = nh.subscribe ("joy", 1, joy_cb);
         //  ros::Publisher comau_cartesian_controller = nh.advertise<lar_comau::ComauCommand>("lar_comau/comau_cartesian_controller", 1);
 
-
-        //Initialize Gripper
-        gripper_serial = open(gripper_usb_name.c_str(), O_RDWR | O_NONBLOCK );
-        gripper_status =gripper_serial>=0;
-        if(!gripper_status) {
-                ROS_INFO("USB Error!");
-                return (0);
+        bool status = false;
+        for(int i = 0; i < 10; i++) {
+                std::stringstream ss;
+                ss << gripper_usb_name <<i;
+                //Initialize Gripper
+                gripper_serial = open(ss.str().c_str(), O_RDWR | O_NONBLOCK );
+                gripper_status =gripper_serial>=0;
+                if(!gripper_status) {
+                        ROS_INFO("USB %d Error!",i);
+                }else{
+                        ROS_INFO("USB %d OK",i);
+                        status = true;
+                        break;
+                }
+        }
+        if(!status){
+            ROS_INFO("Closing due to USB Error!");
+            return (0);
         }
 
         //SEtting BaudRate
