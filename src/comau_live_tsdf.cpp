@@ -86,6 +86,25 @@ bool show_normals = false;
 Palette common_palette;
 
 //SEGMENTATION
+struct TargetObject {
+        pcl::PointCloud<PointType>::Ptr cloud;
+        Eigen::Vector4f centroid;
+
+        TargetObject(pcl::PointCloud<PointType>::Ptr& cloud_in){
+                cloud = cloud_in;
+                pcl::compute3DCentroid(*cloud, centroid);
+        }
+
+};
+
+struct TargetObjectSorterX
+{
+        inline bool operator() (const TargetObject& obj1, const TargetObject& obj2)
+        {
+                return obj1.centroid[0] < obj2.centroid[0];
+        }
+};
+
 pcl::PointCloud<PointType>::Ptr planes(new pcl::PointCloud<PointType>());
 pcl::PointCloud<PointType>::Ptr clusters(new pcl::PointCloud<PointType>());
 pcl::PassThrough<PointType> segmentation_plane_pass_filter;
@@ -99,8 +118,11 @@ double segmentation_plane_angle_th= 10.0;
 int segmentation_plane_speedup = 1;
 double highest_plane_z = -100.0f;
 std::vector<pcl::PointIndices> tsdf_clusters_indices;
-std::vector<pcl::PointCloud<PointType>::Ptr> tsdf_clusters;
+std::vector<TargetObject> tsdf_clusters;
 bool show_tsdf_clusters = false;
+int cluster_consumed = -1;
+
+
 
 //GRASPING
 bool grasping_do_grasp = false;
@@ -115,6 +137,7 @@ double grasp_fritction_cone_angle = 1.57;
 double grasp_max_curvature = 1.57;
 double grasp_approach_angle_offset = 0.707;
 int grasp_type = CRABBY_GRIPPER_STATUS_DUAL;
+bool target_object_acquired = false;
 pcl::PointCloud<PointType>::Ptr target_object(new pcl::PointCloud<PointType>());
 pcl::PointCloud<PointType>::Ptr target_object_approach_slice(new pcl::PointCloud<PointType>());
 pcl::PointCloud<PointType>::Ptr target_grasp_configuration_cloud(new pcl::PointCloud<PointType>());
@@ -330,7 +353,7 @@ void simple_cloud_from_tsdf_update(){
                         pt.y = y;
                         pt.z = z;
                         pt.r = 0; pt.g = 0; pt.b = 0;
-                        if(d<=0.0f && d>=-0.3f) {
+                        if(d<=0.0f && d>=-0.1f) {
                                 tsdf_nodes_out[i]->getRGB(
                                         pt.r,pt.g,pt.b
                                         );
@@ -366,6 +389,35 @@ void integrate_current_cloud(){
         if (cloud->height != height_ || cloud->width != width_)
                 PCL_ERROR ("Error: cloud %d has size %d x %d, but TSDF is initialized for %d x %d pointclouds\n", consumed_data, cloud->width, cloud->height, width_, height_);
 
+
+        bool save_per_frame = true;
+        if(save_per_frame) {
+                std::ofstream myfile;
+                std::stringstream ss;
+                ss << "/home/daniele/temp/live/"<<consumed_data<<".pcd";
+                pcl::io::savePCDFileBinary(ss.str(), *cloud);
+
+                ss.str("");
+                ss << "/home/daniele/temp/live/"<<consumed_data<<"_robot.txt";
+                myfile.open(ss.str().c_str());
+                myfile << T_0_ROBOT;
+                myfile.close();
+
+                ss.str("");
+                ss <<  "/home/daniele/temp/live/" << consumed_data << "_ee.txt";
+                myfile.open(ss.str().c_str());
+                myfile << T_ROBOT_CAMERA;
+                myfile.close();
+
+                ss.str("");
+                ss <<  "/home/daniele/temp/live/" << consumed_data << ".txt";
+                myfile.open(ss.str().c_str());
+                myfile << T_0_CAMERA;
+                myfile.close();
+
+        }
+
+
         tsdf->integrateCloud (*cloud, pcl::PointCloud<pcl::Normal> (),tsdf_affine_transform);
         consumed_data++;
         ROS_INFO("Integrated cloud %d",consumed_data);
@@ -388,12 +440,14 @@ void compute_approach_rf_refinement(){
                 lar_tools::create_eigen_4x4_d(apporach_offset_distance,0,apporach_offset_distance,0,0,0,approach_offset);
                 target_object_approach_rf_wrist_waypoint = target_object_approach_rf_wrist*approach_offset;
 
-                std::cout << "WRIST"<<std::endl;
-                std::cout << target_object_approach_rf_wrist<<std::endl;
-                std::cout << "OFFSET"<<std::endl;
-                std::cout << approach_offset<<std::endl;
-                std::cout << "WRIST WAY"<<std::endl;
-                std::cout << target_object_approach_rf_wrist_waypoint<<std::endl;
+                /*
+                   std::cout << "WRIST"<<std::endl;
+                   std::cout << target_object_approach_rf_wrist<<std::endl;
+                   std::cout << "OFFSET"<<std::endl;
+                   std::cout << approach_offset<<std::endl;
+                   std::cout << "WRIST WAY"<<std::endl;
+                   std::cout << target_object_approach_rf_wrist_waypoint<<std::endl;
+                 */
 
         }else if(grasp_type==CRABBY_GRIPPER_STATUS_DUAL) {
 
@@ -434,7 +488,7 @@ bool check_approach_rf_consistency(){
  */
 void compute_target_object_approach(){
         ROS_INFO("Computing Target Approach: %d",(int)(target_object_approach_slice->points.size()));
-        if(target_object_approach_slice->points.size()<=0) return;
+        if(target_object_approach_slice->points.size()<=0 || !target_object_acquired) return;
 
         Grasper grasper(grasp_hull_alpha, grasp_hull_delta);
         grasper.setCloud(target_object_approach_slice);
@@ -534,7 +588,7 @@ void send_target_approach_to_robot(){
  * Slices Target Object in Tsdf
  */
 void slice_target_object(){
-        if(target_object->points.size()>0) {
+        if(target_object->points.size()>0 && target_object_acquired) {
                 Slicer slicer(grasp_object_slice_size);
                 Eigen::Vector4f centroid;
                 pcl::compute3DCentroid(*target_object, centroid);
@@ -545,12 +599,14 @@ void slice_target_object(){
 
 
                 slicer.slice(target_object, target_object_slice_indices);
-                int target_index = target_object_slice_indices.size()/2;
+                int target_index = target_object_slice_indices.size()/4;
                 pcl::copyPointCloud(*target_object, target_object_slice_indices[target_index].indices, *target_object_approach_slice);
 
         }
 
 }
+
+
 
 /**
  * Clusterizes Common TSDF
@@ -567,14 +623,20 @@ void clusterize_tsdf(){
                         if(tsdf_clusters_indices[i].indices.size()>50) {
                                 pcl::PointCloud<PointType>::Ptr cluster(new pcl::PointCloud<PointType>());
                                 pcl::copyPointCloud(*tsdf_cloud, tsdf_clusters_indices[i].indices, *cluster);
-                                tsdf_clusters.push_back(cluster);
+                                tsdf_clusters.push_back(TargetObject(cluster));
                         }
                 }
         }
-
-        for(int i = 0; i < tsdf_clusters.size(); i++) {
-                if(i==0) {
-                        target_object = tsdf_clusters[i];
+        std::sort(tsdf_clusters.begin(), tsdf_clusters.end(), TargetObjectSorterX());
+        target_object_acquired = false;
+        if(tsdf_clusters.size()>0) {
+                if(cluster_consumed>=0 && (cluster_consumed+1)<tsdf_clusters.size()) {
+                        target_object = tsdf_clusters[cluster_consumed+1].cloud;
+                        target_object_acquired=true;
+                }
+                else{
+                        target_object = tsdf_clusters[0].cloud;
+                        target_object_acquired=true;
                 }
         }
         ROS_INFO("Tsdf Clusters: %d",(int)tsdf_clusters.size());
@@ -663,8 +725,11 @@ void update_visualization(){
                 Palette palette;
                 for(int i = 0; i < tsdf_clusters.size(); i++) {
                         cluster_name = "tsdf_cluster_" + boost::lexical_cast<std::string>(i);
-                        Eigen::Vector3i color = palette.getColor();
-                        display_cloud(*viewer, tsdf_clusters[i], color[0], color[1], color[2], 1, cluster_name);
+                        if(i<= cluster_consumed) {
+                                display_cloud(*viewer, tsdf_clusters[i].cloud, 0, 0, 0, 4, cluster_name);
+                        }else{
+                                viewer->addPointCloud(tsdf_clusters[i].cloud,cluster_name);
+                        }
                 }
         }else{
                 viewer->addPointCloud(tsdf_cloud,"tsdf");
@@ -682,6 +747,15 @@ void update_visualization(){
                 display_cloud(*viewer,target_grasp_configuration_cloud,255,0,255,15,"target_grasp_configuration_cloud");
         }
 
+}
+
+/**
+ * Grasp Target Object full Pipe
+ */
+void compute_grasp_pipe(){
+        clusterize_tsdf();
+        slice_target_object();
+        compute_target_object_approach();
 }
 
 /**
@@ -711,9 +785,7 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
                 if(data_to_consume<=0) {
                         if(consumed_data%10==0) {
                                 simple_cloud_from_tsdf_update();
-                                clusterize_tsdf();
-                                slice_target_object();
-                                compute_target_object_approach();
+                                compute_grasp_pipe();
                         }
                 }
         }
@@ -784,10 +856,22 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                 save_current_tsdf();
         }
         if (event.getKeySym() == "n" && event.keyDown()) {
-                //show_tsdf_clusters = !show_tsdf_clusters;
-                ROS_INFO("Show Clusters %s",show_tsdf_clusters ? "activated" : "deactivated");
-                show_normals = !show_normals;
+                if(tsdf_clusters.size()>0) {
+                        cluster_consumed++;
+                        if(cluster_consumed>tsdf_clusters.size()-1) {
+                                cluster_consumed=-1;
+                        }
+                        ROS_INFO("Cluster consumed %d",cluster_consumed);
+                        compute_grasp_pipe();
+                }
+                //show_normals = !show_normals;
         }
+        if (event.getKeySym() == "j" && event.keyDown()) {
+                show_tsdf_clusters = !show_tsdf_clusters;
+                if(show_tsdf_clusters) ROS_INFO("Cluster view activated!");
+                else ROS_INFO("Cluster view deactivated!");
+        }
+
         if (event.getKeySym() == "m" && event.keyDown()) {
                 show_target_object_slices = !show_target_object_slices;
                 ROS_INFO("Show Target Object %s",show_target_object_slices ? "activated" : "deactivated");
