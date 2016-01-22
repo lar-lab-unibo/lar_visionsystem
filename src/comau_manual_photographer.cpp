@@ -86,34 +86,7 @@ int data_to_consume = 0;
 
 
 
-void
-cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
-        if(cloud_consuming) return;
-        pcl::PCLPointCloud2 pcl_pc;
-        pcl_conversions::toPCL(*input, pcl_pc);
-        pcl::fromPCLPointCloud2(pcl_pc, *cloud);
 
-        if(bilateral){
-          pcl::FastBilateralFilter<PointType> bif;
-          bif.setSigmaS(bilateral_sd);
-          bif.setSigmaR(bilateral_sr);
-          bif.setInputCloud(cloud);
-          bif.applyFilter(*cloud);
-        }
-
-
-
-
-        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
-
-
-
-
-        viewer->removeAllPointClouds();
-        viewer->addPointCloud(cloud_trans, "view");
-        if(manual_merge)
-          viewer->addPointCloud(cloud_full_filtered, "scene");
-}
 
 /*
    cv::Mat current_rgb;
@@ -180,53 +153,87 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
         }
 }
 
+void consume_cloud(){
+    std::string save_folder = "/home/daniele/temp/temp_clouds";
+  if(data_to_consume>0) {
+          cloud_consuming = true;
+          if(cloud->points.size()>0 ) {
+
+
+                  std::ofstream myfile;
+                  std::stringstream ss;
+
+                  ss.str("");
+                  ss << save_folder << "/" << save_counter << ".pcd";
+                  pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud);
+
+                  ss.str("");
+                  ss << save_folder << "/" << save_counter << "_robot.txt";
+                  myfile.open(ss.str().c_str());
+                  myfile << T_0_ROBOT;
+                  myfile.close();
+
+                  ss.str("");
+                  ss << save_folder << "/" << save_counter << "_ee.txt";
+                  myfile.open(ss.str().c_str());
+                  myfile << T_ROBOT_CAMERA;
+                  myfile.close();
+
+                  ss.str("");
+                  ss << save_folder << "/" << save_counter << ".txt";
+                  myfile.open(ss.str().c_str());
+                  myfile << T_0_CAMERA;
+                  myfile.close();
+
+
+
+
+                  std::cout << "Saving shot: "<<save_counter<<std::endl;
+                  save_counter++;
+
+                  data_to_consume--;
+          }
+          cloud_consuming = false;
+  }
+}
+
 void consumeData(){
-        std::string save_folder = "/home/daniele/temp/temp_clouds";
+
         while(nh->ok()) {
 
-                if(data_to_consume>0) {
-                        cloud_consuming = true;
-                        if(cloud->points.size()>0 ) {
-
-
-                                std::ofstream myfile;
-                                std::stringstream ss;
-
-                                ss.str("");
-                                ss << save_folder << "/" << save_counter << ".pcd";
-                                pcl::io::savePCDFileBinary(ss.str().c_str(), *cloud);
-
-                                ss.str("");
-                                ss << save_folder << "/" << save_counter << "_robot.txt";
-                                myfile.open(ss.str().c_str());
-                                myfile << T_0_ROBOT;
-                                myfile.close();
-
-                                ss.str("");
-                                ss << save_folder << "/" << save_counter << "_ee.txt";
-                                myfile.open(ss.str().c_str());
-                                myfile << T_ROBOT_CAMERA;
-                                myfile.close();
-
-                                ss.str("");
-                                ss << save_folder << "/" << save_counter << ".txt";
-                                myfile.open(ss.str().c_str());
-                                myfile << T_0_CAMERA;
-                                myfile.close();
-
-
-
-
-                                std::cout << "Saving shot: "<<save_counter<<std::endl;
-                                save_counter++;
-
-                                data_to_consume--;
-                        }
-                        cloud_consuming = false;
-                }
+                consume_cloud();
                 boost::this_thread::sleep(boost::posix_time::milliseconds(50));
         }
 
+}
+
+void
+cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
+        //if(cloud_consuming) return;
+        pcl::PCLPointCloud2 pcl_pc;
+        pcl_conversions::toPCL(*input, pcl_pc);
+        pcl::fromPCLPointCloud2(pcl_pc, *cloud);
+
+        if(bilateral){
+          pcl::FastBilateralFilter<PointType> bif;
+          bif.setSigmaS(bilateral_sd);
+          bif.setSigmaR(bilateral_sr);
+          bif.setInputCloud(cloud);
+          bif.applyFilter(*cloud);
+        }
+
+
+
+
+        pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
+
+        consume_cloud();
+
+
+        viewer->removeAllPointClouds();
+        viewer->addPointCloud(cloud_trans, "view");
+        if(manual_merge)
+          viewer->addPointCloud(cloud_full_filtered, "scene");
 }
 
 /** MAIN NODE **/
@@ -298,7 +305,7 @@ main(int argc, char** argv) {
         //sub_depth = it.subscribe("/xtion/xtion/depth/image_raw", 1, depth_cb);
 
         // Spin
-        boost::thread collectorThread(consumeData);
+        //boost::thread collectorThread(consumeData);
 
         // Spin
         while (nh->ok() && !viewer->wasStopped()) {
@@ -307,6 +314,6 @@ main(int argc, char** argv) {
                 ros::spinOnce();
         }
 
-        collectorThread.join();
+      //  collectorThread.join();
 
 }

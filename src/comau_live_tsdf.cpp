@@ -77,9 +77,12 @@ pcl::visualization::PCLVisualizer* viewer;
 pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_corrected(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans(new pcl::PointCloud<PointType>);
+pcl::PointCloud<PointType>::Ptr cloud_trans_bounded(new pcl::PointCloud<PointType>);
 pcl::PointCloud<NormalType>::Ptr cloud_trans_normals(new pcl::PointCloud<NormalType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans_purged(new pcl::PointCloud<PointType>);
-
+pcl::PolygonMesh gripper_mesh;
+pcl::PolygonMesh gripper_mesh_ontarget;
+pcl::PolygonMesh gripper_mesh_original;
 
 //VIEWER
 bool show_normals = false;
@@ -125,8 +128,12 @@ int cluster_consumed = -1;
 
 
 //GRASPING
+Grasper* grasper = NULL;
+CrabbyGripper* gripper = NULL;
+std::vector<int> grasp_indices;
 bool grasping_do_grasp = false;
 double grasp_object_slice_size = 0.01;
+double grasp_object_slice_h = 0.05;
 double grasp_hull_alpha = 0.1;
 double grasp_hull_delta = 0.01;
 double grasp_min_offset = 0.01;
@@ -185,6 +192,11 @@ double min_weight = 0;
 bool cloud_noise = true;
 bool camera_noise = true;
 bool do_simple_merge = false;
+double bound_x_min = 0.0f;
+double bound_x_max = 1.5;
+double bound_y_min = -0.4;
+double bound_y_max = 0.4;
+
 double leaf = 0.01f;
 bool use_marching_cube = true;
 
@@ -253,7 +265,7 @@ void current_pose_correction(){
                 pcl::removeNaNFromPointCloud(*cloud_trans,*cloud_trans_purged,v);
                 pcl::IterativeClosestPoint<PointType,PointType> icp;
 
-                icp.setInputCloud(cloud_trans_purged);
+                icp.setInputSource(cloud_trans_purged);
                 icp.setInputTarget(tsdf_cloud);
 
                 icp.setMaxCorrespondenceDistance (0.05);
@@ -319,6 +331,24 @@ void save_current_tsdf(){
 void simple_cloud_from_tsdf_update(){
 
 
+        if(do_simple_merge) {
+
+                cloud_trans_bounded->points.clear();
+
+                pcl::PassThrough<PointType> bound_filter;
+                bound_filter.setFilterFieldName ("x");
+                bound_filter.setFilterLimits (bound_x_min, bound_x_max);
+                bound_filter.setInputCloud (cloud_trans);
+                bound_filter.filter (*cloud_trans_bounded);
+
+                bound_filter.setFilterFieldName ("y");
+                bound_filter.setFilterLimits (bound_y_min, bound_y_max);
+                bound_filter.setInputCloud (cloud_trans_bounded);
+                bound_filter.filter (*cloud_trans_bounded);
+
+                (*tsdf_cloud) += (*cloud_trans_bounded);
+                return;
+        }
 
         if(use_marching_cube) {
 
@@ -353,7 +383,7 @@ void simple_cloud_from_tsdf_update(){
                         pt.y = y;
                         pt.z = z;
                         pt.r = 0; pt.g = 0; pt.b = 0;
-                        if(d<=0.0f && d>=-0.1f) {
+                        if(d<=0.1f) {
                                 tsdf_nodes_out[i]->getRGB(
                                         pt.r,pt.g,pt.b
                                         );
@@ -390,7 +420,7 @@ void integrate_current_cloud(){
                 PCL_ERROR ("Error: cloud %d has size %d x %d, but TSDF is initialized for %d x %d pointclouds\n", consumed_data, cloud->width, cloud->height, width_, height_);
 
 
-        bool save_per_frame = true;
+        bool save_per_frame = false;
         if(save_per_frame) {
                 std::ofstream myfile;
                 std::stringstream ss;
@@ -423,10 +453,59 @@ void integrate_current_cloud(){
         ROS_INFO("Integrated cloud %d",consumed_data);
 }
 
+
+void adjust_gripper_model_transform(  Eigen::Matrix4d& t){
+        Eigen::Matrix4d roty,rotz;
+        lar_tools::rotation_matrix_4x4_d('y',-M_PI/2.0,roty);
+        lar_tools::rotation_matrix_4x4_d('z',M_PI,rotz);
+        t = t * rotz;
+        t = t * roty;
+        t = t * rotz;
+}
+
+/**
+ * Rotate Gripper Mesh
+ */
+void transform_gripper_ontarget_mesh(){
+        Eigen::Matrix4d gripper_ontarget_tf = target_object_approach_rf;
+        adjust_gripper_model_transform(gripper_ontarget_tf);
+
+        pcl::PointCloud<pcl::PointXYZ> cloudp;
+        pcl::fromPCLPointCloud2(gripper_mesh_original.cloud, cloudp);
+        pcl::transformPointCloud(cloudp, cloudp, gripper_ontarget_tf);
+        pcl::toPCLPointCloud2(cloudp, gripper_mesh_ontarget.cloud);
+}
+
+/**
+ * Rotate Gripper Mesh
+ */
+void transform_gripper_mesh(){
+        Eigen::Matrix4d wrist_offset;
+        lar_tools::create_eigen_4x4_d(-0.025,0.0,-0.07-0.095,0,0,0,wrist_offset);
+        Eigen::Matrix4d gripper_tf = T_0_ROBOT*wrist_offset;
+        adjust_gripper_model_transform(gripper_tf);
+
+        pcl::PointCloud<pcl::PointXYZ> cloudp2;
+        pcl::fromPCLPointCloud2(gripper_mesh_original.cloud, cloudp2);
+        pcl::transformPointCloud(cloudp2, cloudp2, gripper_tf);
+        pcl::toPCLPointCloud2(cloudp2, gripper_mesh.cloud);
+}
+
 /**
  * Approach RF Refinement by means of CRASP TYPE
  */
 void compute_approach_rf_refinement(){
+
+        if(gripper==NULL) return;
+
+        double x,y,z,roll,pitch,yaw;
+        gripper->getApproachRF(grasper->points, grasp_indices,x,y,z,roll,pitch,yaw);
+        z = target_object_approach_slice->points[0].z;
+        target_object_approach_rf = Eigen::Matrix4d::Identity();
+        target_object_approach_rf_wrist = Eigen::Matrix4d::Identity();
+        target_object_approach_rf_wrist_waypoint = Eigen::Matrix4d::Identity();
+        lar_tools::create_eigen_4x4_d(x,y,z,roll,pitch,yaw,target_object_approach_rf);
+
         if(grasp_type==CRABBY_GRIPPER_STATUS_PARALLEL) {
                 Eigen::Matrix4d roty,rotz,wrist_offset;
                 lar_tools::rotation_matrix_4x4_d('y',-M_PI/2.0,roty);
@@ -461,6 +540,8 @@ void compute_approach_rf_refinement(){
                 target_object_approach_rf_wrist_waypoint = target_object_approach_rf_wrist*approach_offset;
 
         }
+
+
 }
 
 /**
@@ -490,39 +571,34 @@ void compute_target_object_approach(){
         ROS_INFO("Computing Target Approach: %d",(int)(target_object_approach_slice->points.size()));
         if(target_object_approach_slice->points.size()<=0 || !target_object_acquired) return;
 
-        Grasper grasper(grasp_hull_alpha, grasp_hull_delta);
-        grasper.setCloud(target_object_approach_slice);
-        display_cloud(*viewer, grasper.hull, 255, 0, 0, 15, "target_object_approach_hull");
+        grasper = new Grasper(grasp_hull_alpha, grasp_hull_delta);
+        grasper->hull_type = LAR_VISION_GRASPER_HULL_TYPE_CONCAVE;
+        grasper->setCloud(target_object_approach_slice);
+        display_cloud(*viewer, grasper->hull, 255, 0, 0, 15, "target_object_approach_hull");
 
-        CrabbyGripper gripper(grasp_type);
-        gripper.auto_discard_planar_invalids = true;
-        gripper.min_offset = grasp_min_offset;
-        gripper.max_offset = grasp_max_offset;
-        gripper.min_radius = grasp_min_radius;
-        gripper.max_radius = grasp_max_radius;
-        gripper.fritction_cone_angle = grasp_fritction_cone_angle;
-        gripper.max_curvature = grasp_max_curvature;
+        gripper = new CrabbyGripper(grasp_type);
+        gripper->auto_discard_planar_invalids = true;
+        gripper->min_offset = grasp_min_offset;
+        gripper->max_offset = grasp_max_offset;
+        gripper->min_radius = grasp_min_radius;
+        gripper->max_radius = grasp_max_radius;
+        gripper->fritction_cone_angle = grasp_fritction_cone_angle;
+        gripper->max_curvature = grasp_max_curvature;
 
-        std::vector<int> grasp_indices;
+        grasp_indices.clear();
         int jumps = 0;
         bool found = false;
         target_object_approach_rf_wrist_ready = false;
         Eigen::Matrix4d local_transform= Eigen::Matrix4d::Identity();
 
         while(!found) {
-                gripper.find(grasper.points, grasp_indices,jumps);
+                gripper->find(grasper->points, grasp_indices,jumps);
                 if(grasp_indices.size()==0) break;
 
                 ROS_INFO("Grasp FOUND!");
 
 
-                double x,y,z,roll,pitch,yaw;
-                gripper.getApproachRF(grasper.points, grasp_indices,x,y,z,roll,pitch,yaw);
-                z = target_object_approach_slice->points[0].z;
-                target_object_approach_rf = Eigen::Matrix4d::Identity();
-                target_object_approach_rf_wrist = Eigen::Matrix4d::Identity();
-                target_object_approach_rf_wrist_waypoint = Eigen::Matrix4d::Identity();
-                lar_tools::create_eigen_4x4_d(x,y,z,roll,pitch,yaw,target_object_approach_rf);
+
 
 
                 compute_approach_rf_refinement();
@@ -546,15 +622,15 @@ void compute_target_object_approach(){
 
                         tf_broadcaster->sendTransform(tf::StampedTransform(target_object_approach_rf_wrist_tf, ros::Time::now(), "base", "approach_position"));
                         tf_broadcaster->sendTransform(tf::StampedTransform(target_object_approach_offset_rf_wrist_tf, ros::Time::now(), "base", "approach_position_waypoint"));
-
+                        transform_gripper_ontarget_mesh();
                 }
                 if (grasp_indices.size() > 0) {
                         target_grasp_configuration_cloud->points.clear();
 
                         for (int i = 0; i < grasp_indices.size(); i++) {
                                 PointType p;
-                                p.x = grasper.points[grasp_indices[i]].p[0];
-                                p.y = grasper.points[grasp_indices[i]].p[1];
+                                p.x = grasper->points[grasp_indices[i]].p[0];
+                                p.y = grasper->points[grasp_indices[i]].p[1];
                                 p.z = target_object_approach_slice->points[0].z;
                                 target_grasp_configuration_cloud->points.push_back(p);
                         }
@@ -589,6 +665,7 @@ void send_target_approach_to_robot(){
  */
 void slice_target_object(){
         if(target_object->points.size()>0 && target_object_acquired) {
+                ROS_INFO("Computing Object Slices");
                 Slicer slicer(grasp_object_slice_size);
                 Eigen::Vector4f centroid;
                 pcl::compute3DCentroid(*target_object, centroid);
@@ -599,7 +676,14 @@ void slice_target_object(){
 
 
                 slicer.slice(target_object, target_object_slice_indices);
-                int target_index = target_object_slice_indices.size()/4;
+
+                int target_index = 0;
+                if(grasp_object_slice_h>=0) {
+                        target_index = target_object_slice_indices.size()>grasp_object_slice_h ? target_object_slice_indices.size() - grasp_object_slice_h : target_object_slice_indices.size()/2;
+                }else{
+                        target_index = target_object_slice_indices.size()>fabs(grasp_object_slice_h) ? -grasp_object_slice_h : target_object_slice_indices.size()/2;
+                }
+                ROS_INFO("Computed Object Slices! Slice %d of %d",target_index,(int)target_object_slice_indices.size());
                 pcl::copyPointCloud(*target_object, target_object_slice_indices[target_index].indices, *target_object_approach_slice);
 
         }
@@ -697,6 +781,9 @@ void plane_segmentation(){
 
 }
 
+
+
+
 /**
  * Updates 3D Visualizatioin
  */
@@ -726,7 +813,7 @@ void update_visualization(){
                 for(int i = 0; i < tsdf_clusters.size(); i++) {
                         cluster_name = "tsdf_cluster_" + boost::lexical_cast<std::string>(i);
                         if(i<= cluster_consumed) {
-                                display_cloud(*viewer, tsdf_clusters[i].cloud, 0, 0, 0, 4, cluster_name);
+                              //  display_cloud(*viewer, tsdf_clusters[i].cloud, 0, 0, 0, 4, cluster_name);
                         }else{
                                 viewer->addPointCloud(tsdf_clusters[i].cloud,cluster_name);
                         }
@@ -746,6 +833,25 @@ void update_visualization(){
                 draw_reference_frame(*viewer,  target_object_approach_rf_wrist, 0.1f, "target_object_approach_rf_wrist");
                 display_cloud(*viewer,target_grasp_configuration_cloud,255,0,255,15,"target_grasp_configuration_cloud");
         }
+
+
+        //mesh
+
+
+
+
+
+        viewer->addPolygonMesh(gripper_mesh,"gripper");
+        viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.4,0.4,0.4, "gripper");
+
+        if(show_target_object_slices) {
+                viewer->addPolygonMesh(gripper_mesh_ontarget,"gripper_ontarget");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.8,0.2,0, "gripper_ontarget");
+        }
+        //pcl::PointCloud<PointType>::Ptr xxx(new pcl::PointCloud<PointType>());
+        //pcl::fromPCLPointCloud2(triangles.cloud, *xxx);
+        //display_cloud(*viewer,xxx,255,255,255,4,"gripper");
+
 
 }
 
@@ -783,7 +889,7 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
                 integrate_current_cloud();
                 data_to_consume--;
                 if(data_to_consume<=0) {
-                        if(consumed_data%10==0) {
+                        if(consumed_data%slots==0) {
                                 simple_cloud_from_tsdf_update();
                                 compute_grasp_pipe();
                         }
@@ -806,6 +912,8 @@ void pose_cb(const geometry_msgs::Pose& pose) {
         T_0_ROBOT = T_0_BASE * T_BASE_ROBOT;
         T_0_CAMERA = T_0_ROBOT * T_ROBOT_CAMERA;
         T_0_CAMERA = T_0_CAMERA * T_CURRENTPOSE_REALPOSE;
+
+        transform_gripper_mesh();
 }
 
 /**
@@ -881,13 +989,13 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                 apporach_offset_distance -= 0.01;
                 if(apporach_offset_distance<0.0) apporach_offset_distance=0.0;
                 ROS_INFO("Approach Offset %f",apporach_offset_distance);
-                compute_target_object_approach();
+                compute_approach_rf_refinement();
                 send_target_approach_to_robot();
         }
         if (event.getKeyCode() == 43 && event.keyDown()) {
                 apporach_offset_distance += 0.01;
                 ROS_INFO("Approach Offset %f",apporach_offset_distance);
-                compute_target_object_approach();
+                compute_approach_rf_refinement();
                 send_target_approach_to_robot();
         }
         if (event.getKeySym() == "o" && event.keyDown()) {
@@ -931,6 +1039,16 @@ main(int argc, char** argv) {
 
         //Camera paratemetrs
         nh->param<bool>("simple_merge", do_simple_merge, false);
+        nh->param<double>("bound_x_min", bound_x_min, 0.0);
+        nh->param<double>("bound_x_max", bound_x_max, 1.5);
+        nh->param<double>("bound_y_min", bound_y_min, -0.4);
+        nh->param<double>("bound_y_max", bound_y_max, 0.4);
+
+        double bound_x_min = 0.0f;
+        double bound_x_max = 1.5;
+        double bound_y_min = -0.4;
+        double bound_y_max = 0.4;
+
         nh->param<bool>("camera_noise", camera_noise, false);
         nh->param<double>("camera_error_x", camera_error_x, 0.0);
         nh->param<double>("camera_error_y", camera_error_y, 0.0);
@@ -978,6 +1096,7 @@ main(int argc, char** argv) {
 
         //Slicing & Grasping
         nh->param<double>("grasp_object_slice_size", grasp_object_slice_size, 0.01);
+        nh->param<double>("grasp_object_slice_h", grasp_object_slice_h, 0.06);
         nh->param<double>("grasp_hull_alpha",grasp_hull_alpha,0.1);
         nh->param<double>("grasp_hull_delta",grasp_hull_delta,0.01);
         nh->param<double>("grasp_min_offset",grasp_min_offset,0.01);
@@ -1000,6 +1119,9 @@ main(int argc, char** argv) {
         /** VIEWER */
         viewer = new pcl::visualization::PCLVisualizer("viewer");
         viewer->registerKeyboardCallback(keyboardEventOccurred, (void*) &viewer);
+        pcl::io::loadPolygonFileSTL("/home/daniele/gripper_full.stl", gripper_mesh);
+        pcl::io::loadPolygonFileSTL("/home/daniele/gripper_full.stl", gripper_mesh_ontarget);
+        pcl::io::loadPolygonFileSTL("/home/daniele/gripper_full.stl", gripper_mesh_original);
 
         /** TRANSFORMS */
         lar_tools::create_eigen_4x4_d(0,0,0, 0,0, 0, T_0_BASE);

@@ -2,20 +2,33 @@
 
   <node name="comau_live_tsdf" output="screen" pkg="lar_visionsystem" type="comau_live_tsdf">
 
+    <param name="simple_merge" value="false"/>
+    <param name="bound_x_min" value="0"/>
+    <param name="bound_x_max" value="1.5"/>
+    <param name="bound_y_min" value="-0.6"/>
+    <param name="bound_y_max" value="0.2"/>
+
     <param name="width" value="640"/>
     <param name="height" value="480"/>
-    <param name="crop_width" value="600"/>
-    <param name="crop_height" value="400"/>
-    <param name="tsdf_size" value="1.6"/>
+    <param name="crop_width" value="640"/>
+    <param name="crop_height" value="480"/>
+    <param name="tsdf_size" value="2"/>
     <param name="cell_size" value="0.003"/>
-    <param name="trunc_dist_pos" value="0.03"/>
-    <param name="trunc_dist_neg" value="0.03"/>
+    <param name="trunc_dist_pos" value="0.05"/>
+    <param name="trunc_dist_neg" value="0.05"/>
     <param name="max_sensor_dist" value="3.0"/>
     <param name="min_sensor_dist" value="0.0"/>
+
     <param name="fx" value="526.247991"/>
     <param name="fy" value="571.899473"/>
     <param name="cx" value="320.248946"/>
     <param name="cy" value="247.448129"/>
+
+    <!--<param name="fx" value="263.1239955"/>
+    <param name="fy" value="285.9497365"/>
+    <param name="cx" value="160.124473"/>
+    <param name="cy" value="123.7240645"/>-->
+
     <param name="min_weight" value="0"/>
     <param name="use_marching_cube" value="false"/>
 
@@ -28,7 +41,7 @@
     <param name="camera_error_pitch" value="-0.01414"/>
     <param name="camera_error_yaw" value="0.0"/>
 
-    <param name="slots" value="10"/>
+    <param name="slots" value="5"/>
     <param name="offx" value="0.0"/>
     <param name="offy" value="0.0"/>
     <param name="offz" value="0.0"/>
@@ -38,13 +51,14 @@
     <!-- Segmentation -->
     <param name="segmentation_plane_highest_th" value="0.00"/>
     <param name="segmentation_plane_slice" value="0.05"/>
-    <param name="segmentation_plane_startz" value="-1.02"/>
+    <param name="segmentation_plane_startz" value="-1.01"/>
     <param name="segmentation_plane_angle_th" value="40"/>
     <param name="segmentation_plane_min_inliers" value="8500"/>
     <param name="segmentation_plane_speedup" value="1"/>
 
     <!-- Slicing & Grasping -->
-    <param name="grasp_object_slice_size" value="0.002"/>
+    <param name="grasp_object_slice_size" value="0.005"/>
+    <param name="grasp_object_slice_h" value="-6"/>
     <param name="grasp_hull_alpha" value="0.1"/>
     <param name="grasp_hull_delta" value="0.01"/>
     <param name="grasp_min_offset" value="0.01"/>
@@ -53,7 +67,7 @@
     <param name="grasp_max_radius" value="0.05"/>
     <param name="grasp_fritction_cone_angle" value="1.57"/>
     <param name="grasp_max_curvature" value="1.57"/>
-    <param name="grasp_approach_angle_offset" value="0.707"/>
+    <param name="grasp_approach_angle_offset" value="0.348888889"/>
     <param name="grasp_type" value="0"/>
 
 
