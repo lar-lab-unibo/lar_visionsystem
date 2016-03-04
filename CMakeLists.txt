@@ -17,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_runtime
   pcl_ros
   kdl_parser
+  laser_geometry
 )
 
 
@@ -66,12 +67,20 @@ generate_messages(
   geometry_msgs
 )
 
+#Configurations
+generate_dynamic_reconfigure_options(
+  cfg/comau_manual_camera_align.cfg
+)
+
 catkin_package(
    CATKIN_DEPENDS
    message_runtime
    geometry_msgs
    std_msgs
+   laser_geometry
 )
+
+
 
 #SOPHUS
 #set(SOPHUS_INCLUDE_DIRS /usr/local/include/sophus)
@@ -178,6 +187,18 @@ add_dependencies(tester ${PROJECT_NAME}_generate_messages_cpp)
 add_executable(comau_manual_photographer src/comau_manual_photographer.cpp)
 target_link_libraries(comau_manual_photographer ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
 add_dependencies(comau_manual_photographer ${PROJECT_NAME}_generate_messages_cpp)
+
+# comau_manual_laser
+add_executable(comau_manual_laser src/comau_manual_laser.cpp)
+target_link_libraries(comau_manual_laser ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
+add_dependencies(comau_manual_laser ${PROJECT_NAME}_generate_messages_cpp)
+
+
+# comau_manual_camera_align
+add_executable(comau_manual_camera_align src/comau_manual_camera_align.cpp)
+target_link_libraries(comau_manual_camera_align ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
+add_dependencies(comau_manual_camera_align ${PROJECT_NAME}_generate_messages_cpp)
+
 
 # comau_live_tsdf
 add_executable(comau_live_tsdf src/comau_live_tsdf.cpp)

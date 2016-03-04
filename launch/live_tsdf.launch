@@ -2,11 +2,7 @@
 
   <node name="comau_live_tsdf" output="screen" pkg="lar_visionsystem" type="comau_live_tsdf">
 
-    <param name="simple_merge" value="false"/>
-    <param name="bound_x_min" value="0"/>
-    <param name="bound_x_max" value="1.5"/>
-    <param name="bound_y_min" value="-0.6"/>
-    <param name="bound_y_max" value="0.2"/>
+
 
     <param name="width" value="640"/>
     <param name="height" value="480"/>
@@ -33,15 +29,39 @@
     <param name="use_marching_cube" value="false"/>
 
 
-    <param name="camera_noise" value="true"/>
+  <!--  <param name="camera_noise" value="true"/>
     <param name="camera_error_x" value="0.0"/>
     <param name="camera_error_y" value="-0.024"/>
     <param name="camera_error_z" value="0.0"/>
     <param name="camera_error_roll" value="-0.08484"/>
     <param name="camera_error_pitch" value="-0.01414"/>
-    <param name="camera_error_yaw" value="0.0"/>
+    <param name="camera_error_yaw" value="0.0"/>-->
 
-    <param name="slots" value="5"/>
+<!-- CRABBY GRIPPER v0
+    <param name="camera_noise" value="true"/>
+    <param name="camera_error_x" value="0.073"/>
+    <param name="camera_error_y" value="-0.0094"/>
+    <param name="camera_error_z" value="-0.1488"/>
+    <param name="camera_error_roll" value="0"/>
+    <param name="camera_error_pitch" value="3.14"/>
+    <param name="camera_error_yaw" value="-1.535111111"/>
+  -->
+
+  <!-- TRIPOD GRIPPER v2 -->
+  <param name="camera_noise" value="true"/>
+  <param name="camera_error_x" value="-0.091"/>
+  <param name="camera_error_y" value="0.02"/>
+  <param name="camera_error_z" value="-0.155"/>
+  <param name="camera_error_roll" value="3.131277778"/>
+  <param name="camera_error_pitch" value="0.008722222"/>
+  <param name="camera_error_yaw" value="-1.547322222"/>
+
+    <param name="simple_merge" value="true"/>
+    <param name="bound_x_min" value="0"/>
+    <param name="bound_x_max" value="1.5"/>
+    <param name="bound_y_min" value="-10.6"/>
+    <param name="bound_y_max" value="10.2"/>
+    <param name="slots" value="1"/>
     <param name="offx" value="0.0"/>
     <param name="offy" value="0.0"/>
     <param name="offz" value="0.0"/>
@@ -57,6 +77,7 @@
     <param name="segmentation_plane_speedup" value="1"/>
 
     <!-- Slicing & Grasping -->
+
     <param name="grasp_object_slice_size" value="0.005"/>
     <param name="grasp_object_slice_h" value="-6"/>
     <param name="grasp_hull_alpha" value="0.1"/>

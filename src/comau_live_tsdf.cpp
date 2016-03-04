@@ -80,6 +80,8 @@ pcl::PointCloud<PointType>::Ptr cloud_trans(new pcl::PointCloud<PointType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans_bounded(new pcl::PointCloud<PointType>);
 pcl::PointCloud<NormalType>::Ptr cloud_trans_normals(new pcl::PointCloud<NormalType>);
 pcl::PointCloud<PointType>::Ptr cloud_trans_purged(new pcl::PointCloud<PointType>);
+pcl::PolygonMesh comau_mesh;
+pcl::PolygonMesh comau_mesh_original;
 pcl::PolygonMesh gripper_mesh;
 pcl::PolygonMesh gripper_mesh_ontarget;
 pcl::PolygonMesh gripper_mesh_original;
@@ -123,6 +125,7 @@ double highest_plane_z = -100.0f;
 std::vector<pcl::PointIndices> tsdf_clusters_indices;
 std::vector<TargetObject> tsdf_clusters;
 bool show_tsdf_clusters = false;
+bool correcting_pose = false;
 int cluster_consumed = -1;
 
 
@@ -268,9 +271,10 @@ void current_pose_correction(){
                 icp.setInputSource(cloud_trans_purged);
                 icp.setInputTarget(tsdf_cloud);
 
+                // Set the max correspondence distance to 5cm (e.g., correspondences with higher distances will be ignored)
                 icp.setMaxCorrespondenceDistance (0.05);
                 // Set the maximum number of iterations (criterion 1)
-                icp.setMaximumIterations (55000);
+                icp.setMaximumIterations (50);
                 // Set the transformation epsilon (criterion 2)
                 icp.setTransformationEpsilon (1e-8);
                 // Set the euclidean distance difference epsilon (criterion 3)
@@ -796,7 +800,7 @@ void update_visualization(){
         //RAW SINGLE VIEW DATA
         if(show_raw_data) {
                 viewer->addPointCloud(cloud_trans, "view");
-
+                //viewer->addPointCloud(cloud_corrected, "view_corrected");
 
 
                 if(show_normals) {
@@ -813,7 +817,7 @@ void update_visualization(){
                 for(int i = 0; i < tsdf_clusters.size(); i++) {
                         cluster_name = "tsdf_cluster_" + boost::lexical_cast<std::string>(i);
                         if(i<= cluster_consumed) {
-                              //  display_cloud(*viewer, tsdf_clusters[i].cloud, 0, 0, 0, 4, cluster_name);
+                                //  display_cloud(*viewer, tsdf_clusters[i].cloud, 0, 0, 0, 4, cluster_name);
                         }else{
                                 viewer->addPointCloud(tsdf_clusters[i].cloud,cluster_name);
                         }
@@ -839,7 +843,7 @@ void update_visualization(){
 
 
 
-
+        viewer->addPolygonMesh(comau_mesh,"comau_base");
 
         viewer->addPolygonMesh(gripper_mesh,"gripper");
         viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.4,0.4,0.4, "gripper");
@@ -852,7 +856,7 @@ void update_visualization(){
         //pcl::fromPCLPointCloud2(triangles.cloud, *xxx);
         //display_cloud(*viewer,xxx,255,255,255,4,"gripper");
 
-
+        std::cout << "T_O_CAMERA \n"<<T_0_CAMERA<<std::endl;
 }
 
 /**
@@ -874,6 +878,11 @@ void cloud_cb(const sensor_msgs::PointCloud2ConstPtr& input) {
         pcl_conversions::toPCL(*input, pcl_pc);
         pcl::fromPCLPointCloud2(pcl_pc, *cloud);
         pcl::transformPointCloud(*cloud, *cloud_trans, T_0_CAMERA);
+
+        if(correcting_pose){
+          pcl::transformPointCloud(*cloud_trans, *cloud_trans, T_CURRENTPOSE_REALPOSE);
+        }
+
         lar_vision::compute_normals(cloud_trans,cloud_trans_normals);
 
         //Plane extractions
@@ -911,7 +920,7 @@ void pose_cb(const geometry_msgs::Pose& pose) {
 
         T_0_ROBOT = T_0_BASE * T_BASE_ROBOT;
         T_0_CAMERA = T_0_ROBOT * T_ROBOT_CAMERA;
-        T_0_CAMERA = T_0_CAMERA * T_CURRENTPOSE_REALPOSE;
+      //  T_0_CAMERA = T_0_CAMERA * T_CURRENTPOSE_REALPOSE;
 
         transform_gripper_mesh();
 }
@@ -974,6 +983,16 @@ void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
                 }
                 //show_normals = !show_normals;
         }
+        if (event.getKeySym() == "p" && event.keyDown()) {
+                if(correcting_pose) {
+                        correcting_pose = false;
+                        lar_tools::create_eigen_4x4_d(0,0,0, 0,0, 0, T_CURRENTPOSE_REALPOSE);
+                }else{
+                        correcting_pose = true;
+                        current_pose_correction();
+                }
+        }
+
         if (event.getKeySym() == "j" && event.keyDown()) {
                 show_tsdf_clusters = !show_tsdf_clusters;
                 if(show_tsdf_clusters) ROS_INFO("Cluster view activated!");
@@ -1123,12 +1142,28 @@ main(int argc, char** argv) {
         pcl::io::loadPolygonFileSTL("/home/daniele/gripper_full.stl", gripper_mesh_ontarget);
         pcl::io::loadPolygonFileSTL("/home/daniele/gripper_full.stl", gripper_mesh_original);
 
+        //COMAU BASE
+        {
+                pcl::io::loadPolygonFileSTL("/home/daniele/comau_base.stl", comau_mesh);
+
+                Eigen::Matrix4d comau_base;
+                lar_tools::create_eigen_4x4_d(0,0,-0.4,0,0,0,comau_base);
+
+                pcl::PointCloud<pcl::PointXYZ> cloudp2;
+                pcl::fromPCLPointCloud2(comau_mesh.cloud, cloudp2);
+                pcl::transformPointCloud(cloudp2, cloudp2, comau_base);
+                pcl::toPCLPointCloud2(cloudp2, comau_mesh.cloud);
+        }
+
+
+
         /** TRANSFORMS */
         lar_tools::create_eigen_4x4_d(0,0,0, 0,0, 0, T_0_BASE);
         lar_tools::create_eigen_4x4_d(0,0,0, 0,0, 0, T_CURRENTPOSE_REALPOSE);
         lar_tools::create_eigen_4x4_d(offx, offy, offz, 0,0, 0, T_WORLD_0);
-        lar_tools::create_eigen_4x4_d(0.061,-0.0094,-0.1488,179.0 * M_PI/180.0f,0,-89.5 * M_PI/180.0f,T_ROBOT_CAMERA);
-        lar_tools::create_eigen_4x4_d(0, 0, 0, 0,0, M_PI, T_CAMERA_ROTATION);   //Rotate camera for Geometry Construction
+        //lar_tools::create_eigen_4x4_d(0.061,-0.0094,-0.1488,179.0 * M_PI/180.0f,0,-89.5 * M_PI/180.0f,T_ROBOT_CAMERA);
+        lar_tools::create_eigen_4x4_d(0,0,0,0,0,0,T_ROBOT_CAMERA);
+        lar_tools::create_eigen_4x4_d(0, 0, 0, 0,0, 0, T_CAMERA_ROTATION);   //Rotate camera for Geometry Construction
 
         T_ROBOT_CAMERA=T_ROBOT_CAMERA*T_CAMERA_ROTATION;
 
