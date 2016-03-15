@@ -25,7 +25,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/${PROJECT_NAME}/
 set(CMAKE_INCLUDE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/${PROJECT_NAME}/include/")
 
 #PCL
-find_package(PCL 1.8 REQUIRED  )
+find_package(PCL  REQUIRED  )
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -204,3 +204,9 @@ add_dependencies(comau_manual_camera_align ${PROJECT_NAME}_generate_messages_cpp
 add_executable(comau_live_tsdf src/comau_live_tsdf.cpp)
 target_link_libraries(comau_live_tsdf ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
 add_dependencies(comau_live_tsdf ${PROJECT_NAME}_generate_messages_cpp)
+
+
+# comau_manual_laser
+add_executable(conveyor_vrep_test src/conveyor_vrep_test.cpp)
+target_link_libraries(conveyor_vrep_test ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${ARUCO_LIBS} lar_tools lar_vision lar_visionsystem_commons)
+add_dependencies(conveyor_vrep_test ${PROJECT_NAME}_generate_messages_cpp)

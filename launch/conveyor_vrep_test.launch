@@ -1,0 +1,8 @@
+<launch>
+  <node name="conveyor_vrep_test" pkg="lar_visionsystem" type="conveyor_vrep_test" output="screen" >
+    <param name="conveyor_height" value="0.45" />
+    <param name="alpha" value="0.1" />
+    <param name="approach_distance" value="0.06" />
+    <param name="target_steps" value="80" />
+  </node>
+</launch>
